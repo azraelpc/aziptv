@@ -33,6 +33,11 @@ public partial class MainWindow : Window
     private bool    _isRecording;
     private string? _recordingPath;
 
+    // Volume state — owned here so rapid adjustments never race with LibVLC's getter.
+    private int              _volume  = 100;
+    private bool             _isMuted = false;
+    private DispatcherTimer? _volumeOverlayTimer;
+
     public MainWindow()
     {
         // Read last-played URL synchronously before InitializeComponent so
@@ -81,6 +86,8 @@ public partial class MainWindow : Window
         VideoHost.VideoSingleTapped   += OnVideoSingleTapped;
         VideoHost.VideoContextMenu    += ShowContextMenu;
         VideoHost.VideoKeyPressed     += OnVideoKeyPressed;
+        VideoHost.VideoMouseWheel    += delta => AdjustVolume(delta > 0 ? 5 : -5);
+        VideoHost.VideoMiddleClicked += ToggleMute;
 
         SidePanel.ChannelSelected     += OnChannelSelected;
         SidePanel.PanelCloseRequested += CloseSidePanel;
@@ -149,7 +156,7 @@ public partial class MainWindow : Window
             {
                 var result = await PlaylistService.LoadFromUrlAsync(playlistUrl);
                 AppLogger.Log($"Playlist loaded: {result.Channels.Count} channels");
-                AfterPlaylistLoaded(result, playFirst: false);
+                AfterPlaylistLoaded(result, playFirst: false, listTitle: ResolveUrlListName(playlistUrl));
             }
             catch (Exception ex) { AppLogger.LogException("startup playlist URL", ex); }
             finally { SetLoadingState(false); }
@@ -162,7 +169,7 @@ public partial class MainWindow : Window
             {
                 var result = await PlaylistService.LoadFromFileAsync(playlistFile);
                 AppLogger.Log($"Playlist loaded: {result.Channels.Count} channels");
-                AfterPlaylistLoaded(result, playFirst: false);
+                AfterPlaylistLoaded(result, playFirst: false, listTitle: Path.GetFileNameWithoutExtension(playlistFile));
             }
             catch (Exception ex) { AppLogger.LogException("startup playlist file", ex); }
             finally { SetLoadingState(false); }
@@ -450,7 +457,7 @@ public partial class MainWindow : Window
                     PlaylistService.UpdateUrlName(url, name);
             }
 
-            AfterPlaylistLoaded(result, playFirst: true);
+            AfterPlaylistLoaded(result, playFirst: true, listTitle: ResolveUrlListName(url));
         }
         catch (Exception ex) { AppLogger.LogException("LoadFromUrl", ex); }
         finally { SetLoadingState(false); }
@@ -481,23 +488,24 @@ public partial class MainWindow : Window
             var result = await PlaylistService.LoadFromFileAsync(path);
             PlaylistService.SaveSettings(null, path);
             AppLogger.Log($"Playlist loaded: {result.Channels.Count} channels");
-            AfterPlaylistLoaded(result, playFirst: true);
+            AfterPlaylistLoaded(result, playFirst: true, listTitle: Path.GetFileNameWithoutExtension(path));
         }
         catch (Exception ex) { AppLogger.LogException("LoadFromFile", ex); }
         finally { SetLoadingState(false); }
     }
 
-    private void AfterPlaylistLoaded(ParseResult result, bool playFirst)
+    private void AfterPlaylistLoaded(ParseResult result, bool playFirst, string? listTitle = null)
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
             Dispatcher.UIThread.Post(() =>
             {
-                try { AfterPlaylistLoaded(result, playFirst); }
+                try { AfterPlaylistLoaded(result, playFirst, listTitle); }
                 catch (Exception ex) { AppLogger.LogException("AfterPlaylistLoaded", ex); }
             });
             return;
         }
+        Title = string.IsNullOrEmpty(listTitle) ? "AzIPTV" : $"AzIPTV — {listTitle}";
         SidePanel.LoadChannels(result);
         OpenSidePanel();
         if (playFirst && result.Channels.Count > 0)
@@ -505,6 +513,17 @@ public partial class MainWindow : Window
             AppLogger.Log($"Auto-playing first channel: {result.Channels[0].Name}");
             PlayChannelUrl(result.Channels[0].Url);
         }
+    }
+
+    /// <summary>Resolves a human-readable name for a playlist URL from history or fixed list.</summary>
+    private static string ResolveUrlListName(string url)
+    {
+        var fix = PlaylistService.FixedPlaylists
+            .FirstOrDefault(f => string.Equals(f.Url, url, StringComparison.OrdinalIgnoreCase));
+        if (fix is not null) return fix.Name;
+        return PlaylistService.LoadUrlHistory()
+            .FirstOrDefault(e => string.Equals(e.Url, url, StringComparison.OrdinalIgnoreCase))?.Name
+            ?? (Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : url);
     }
 
     // ── Side panel ────────────────────────────────────────────────────────────
@@ -593,6 +612,15 @@ public partial class MainWindow : Window
             case 0x52: // VK_R
                 if (!panelOpen) OnRecClicked(null, null!);
                 break;
+            case 0x6B: // VK_ADD (numpad +)
+                AdjustVolume(5);
+                break;
+            case 0x6D: // VK_SUBTRACT (numpad -)
+                AdjustVolume(-5);
+                break;
+            case 0x4D: // VK_M
+                if (!panelOpen) ToggleMute();
+                break;
         }
     }
 
@@ -624,7 +652,56 @@ public partial class MainWindow : Window
             case Key.R:
                 if (!panelOpen) { OnRecClicked(null, null!); e.Handled = true; }
                 break;
+            case Key.Add:      // numpad +
+                AdjustVolume(5); e.Handled = true;
+                break;
+            case Key.Subtract: // numpad -
+                AdjustVolume(-5); e.Handled = true;
+                break;
+            case Key.M:
+                if (!panelOpen) { ToggleMute(); e.Handled = true; }
+                break;
         }
+    }
+
+    // ── Volume ──────────────────────────────────────────────────────────────
+
+    private void AdjustVolume(int delta)
+    {
+        if (_mediaPlayer is null) return;
+        _volume = Math.Clamp(_volume + delta, 0, 200);
+        _mediaPlayer.Volume = _volume;
+        AppLogger.Log($"Volume: {_volume}%");
+        ShowVolumeOverlay($"🔊 {_volume}%");
+    }
+
+    private void ToggleMute()
+    {
+        if (_mediaPlayer is null) return;
+        _isMuted = !_isMuted;
+        _mediaPlayer.Mute = _isMuted;
+        AppLogger.Log(_isMuted ? "Muted" : "Unmuted");
+        ShowVolumeOverlay(_isMuted ? "🔇 Muted" : $"🔊 {_volume}%");
+    }
+
+    private void ShowVolumeOverlay(string text)
+    {
+        if (WindowState != WindowState.FullScreen) return;
+
+        VolumeOverlayText.Text = text;
+        if (!VolumeOverlayPopup.IsOpen)
+            VolumeOverlayPopup.Open();
+
+        // Restart the auto-hide timer so rapid changes extend the visibility window.
+        _volumeOverlayTimer?.Stop();
+        _volumeOverlayTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _volumeOverlayTimer.Tick += (_, _) =>
+        {
+            _volumeOverlayTimer!.Stop();
+            _volumeOverlayTimer = null;
+            VolumeOverlayPopup.Close();
+        };
+        _volumeOverlayTimer.Start();
     }
 
     // ── Context menu (right-click on video) ───────────────────────────────────

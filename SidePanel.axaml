@@ -21,6 +21,13 @@
             <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}"/>
         </Style>
+        <Style Selector="ComboBox:focus /template/ Border#Background">
+            <Setter Property="Background" Value="#1976D2"/>
+            <Setter Property="BorderBrush" Value="#1976D2"/>
+        </Style>
+        <Style Selector="ComboBox:focus">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
         <Style Selector="ComboBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
             <Setter Property="Background" Value="{DynamicResource AppInputBg}"/>

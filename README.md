@@ -5,14 +5,16 @@ A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.ne
 ## Features
 
 - **M3U / M3U8 playlist support** — load from a URL or a local file
-- **Channel browser** — side panel with full-text search and group filter
-- **URL history** — save and name your favourite playlists
+- **Channel browser** — side panel with full-text search and group (TV category) filter
+- **Keyboard-first navigation** — move through the channel list, search box, and group picker entirely from the keyboard
+- **URL history** — save and name your favourite playlists; window title shows the active playlist name
+- **Volume control** — mouse wheel, numpad `+`/`-`, or `M` to mute; fullscreen overlay shows the current level
 - **Always-on-top** — pin the window above other apps
 - **Recording (REC)** — record the current stream to a `.ts` file
 - **Auto-retry / circuit-breaker** — automatically restarts on stream errors, pauses after too many consecutive failures
 - **Dark / Light theme** — follows the OS by default, can be overridden and persisted
-- **Fullscreen** — press F or double-click the video; controls hide automatically
-- **Keyboard shortcuts** — full keyboard control even when the VLC surface has focus
+- **Fullscreen** — press `F` or double-click the video; controls hide automatically
+- **Native splash screen** — DPI-aware Win32 splash shown immediately on startup, before the UI loads
 
 ## Requirements
 
@@ -21,7 +23,7 @@ A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.ne
 | .NET      | 8.0+    |
 | Windows   | 10 / 11 (x64) |
 
-> Linux / macOS are not supported — the app uses Win32 P/Invoke for the VLC overlay, mouse/keyboard hooks, and window management.
+> Linux / macOS are not supported — the app uses Win32 P/Invoke for the VLC overlay, mouse/keyboard hooks, native splash, and window management.
 
 ## Build
 
@@ -39,6 +41,8 @@ dotnet run
 
 ## Keyboard Shortcuts
 
+### Global (video has focus or panel is closed)
+
 | Key | Action |
 |-----|--------|
 | `Tab` | Toggle channel browser |
@@ -48,6 +52,23 @@ dotnet run
 | `U` | Load playlist from URL |
 | `L` | Load playlist from file |
 | `R` | Start / Stop recording |
+| `M` | Mute / Unmute |
+| Numpad `+` / `−` | Volume up / down |
+| Mouse wheel (over video) | Volume up / down |
+| Middle mouse button | Mute / Unmute |
+
+### Channel browser (side panel open)
+
+| Key | Action |
+|-----|--------|
+| `↓` / `↑` | Move selection in channel list |
+| `Page Down` / `Page Up` | Jump 10 channels |
+| `Enter` | Play selected channel |
+| `↑` at top of list | Open group (TV category) picker |
+| `↓` / `↑` in group picker | Navigate groups |
+| `Enter` in group picker | Confirm group, filter list, return focus |
+| `Esc` in group picker | Cancel, return to search |
+| Type anything | Focus search box and filter |
 
 ## User Data
 

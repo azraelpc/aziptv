@@ -55,6 +55,13 @@ public class VideoView : NativeControlHost
     /// The argument is the Win32 virtual-key code.</summary>
     public event Action<uint>? VideoKeyPressed;
 
+    /// <summary>Fired on the UI thread when the mouse wheel is scrolled over the video.
+    /// Positive delta = scroll up; negative = scroll down.</summary>
+    public event Action<int>? VideoMouseWheel;
+
+    /// <summary>Fired on the UI thread when the middle mouse button is released over the video.</summary>
+    public event Action? VideoMiddleClicked;
+
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
     {
         _hwnd = NativeMethods.CreateWindowEx(
@@ -187,6 +194,24 @@ public class VideoView : NativeControlHost
                         catch (Exception ex) { AppLogger.LogException("VideoContextMenu", ex); }
                     });
                 }
+                else if (msg == NativeMethods.WM_MOUSEWHEEL)
+                {
+                    // High word of mouseData is the signed wheel delta.
+                    int delta = (int)(short)((data.mouseData >> 16) & 0xFFFF);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        try { VideoMouseWheel?.Invoke(delta); }
+                        catch (Exception ex) { AppLogger.LogException("VideoMouseWheel", ex); }
+                    });
+                }
+                else if (msg == NativeMethods.WM_MBUTTONUP)
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        try { VideoMiddleClicked?.Invoke(); }
+                        catch (Exception ex) { AppLogger.LogException("VideoMiddleClicked", ex); }
+                    });
+                }
             }
         }
 
@@ -251,6 +276,8 @@ internal static class NativeMethods
     public const int  WM_SYSKEYDOWN  = 0x0104;
     public const int  WM_LBUTTONDOWN = 0x0201;
     public const int  WM_RBUTTONUP   = 0x0205;
+    public const int  WM_MBUTTONUP   = 0x0208;
+    public const int  WM_MOUSEWHEEL  = 0x020A;
     public const uint WM_ERASEBKGND  = 0x0014;
 
     [StructLayout(LayoutKind.Sequential)]

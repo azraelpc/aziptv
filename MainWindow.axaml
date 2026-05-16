@@ -121,5 +121,25 @@
             <local:SidePanel x:Name="SidePanel" />
         </Popup>
 
+        <!-- Volume/mute overlay: briefly appears in the top-right corner during fullscreen. -->
+        <Popup x:Name="VolumeOverlayPopup"
+               Grid.Row="0"
+               Placement="AnchorAndGravity"
+               PlacementAnchor="TopRight"
+               PlacementGravity="BottomLeft"
+               PlacementTarget="{Binding ElementName=VideoGrid}"
+               HorizontalOffset="-12"
+               VerticalOffset="12"
+               IsLightDismissEnabled="False">
+            <Border Background="#CC101010"
+                    CornerRadius="6"
+                    Padding="14,8">
+                <TextBlock x:Name="VolumeOverlayText"
+                           Foreground="White"
+                           FontSize="15"
+                           FontWeight="SemiBold" />
+            </Border>
+        </Popup>
+
     </Grid>
 </Window>
