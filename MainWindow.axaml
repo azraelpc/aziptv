@@ -1,0 +1,125 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:AzIPTV"
+        x:Class="AzIPTV.MainWindow"
+        Title="AzIPTV"
+        Icon="/program.ico"
+        Width="1024" Height="630"
+        MinWidth="640" MinHeight="410"
+        WindowStartupLocation="CenterScreen"
+        KeyboardNavigation.TabNavigation="None">
+
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="{DynamicResource AppButtonBg}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="Button:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppButtonHoverBg}" />
+        </Style>
+        <Style Selector="Button:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppButtonPressBg}" />
+        </Style>
+
+        <Style Selector="ToggleButton">
+            <Setter Property="Background" Value="{DynamicResource AppButtonBg}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="ToggleButton:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="#1976D2" />
+        </Style>
+        <Style Selector="ToggleButton:checked">
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="ToggleButton:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppButtonHoverBg}" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="*,Auto,Auto">
+
+        <!-- Video area: black background, VLC renders here -->
+        <Grid x:Name="VideoGrid" Grid.Row="0" Background="#505050">
+            <local:VideoView x:Name="VideoHost"
+                             HorizontalAlignment="Stretch"
+                             VerticalAlignment="Stretch" />
+            <!-- SidePanel is now in a Popup (see below) so it renders above VLC's native HWNDs -->
+        </Grid>
+
+        <!-- Controls bar -->
+        <Border x:Name="ControlsBar" Grid.Row="1" Background="{DynamicResource AppBarBg}" Padding="8,6">
+            <StackPanel Orientation="Horizontal" Spacing="8"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+
+                <Button x:Name="ChannelsButton"
+                        Content="&#x1F4FA; Channels (Tab)"
+                        Click="OnChannelsClicked" />
+
+                <Button x:Name="PlayButton"
+                        Content="&#x25B6;  Play (P)"
+                        Click="OnPlayClicked" />
+
+                <Button x:Name="FullscreenButton"
+                        Content="&#x25A1;  Fullscreen (F)"
+                        Click="OnFullscreenClicked" />
+
+                <Button x:Name="LoadUrlButton"
+                        Content="&#x1F310; Load URL (U)"
+                        Click="OnLoadFromUrlClicked" />
+
+                <Button x:Name="LoadFileButton"
+                        Content="&#x1F4C1; Load File (L)"
+                        Click="OnLoadFromFileClicked" />
+
+                <ToggleButton x:Name="PinButton"
+                              Content="&#x1F4CC; On Top"
+                              ToolTip.Tip="Always on top"
+                              Click="OnPinToggled" />
+
+                <Button x:Name="RecButton"
+                        Content="&#x23FA; REC (R)"
+                        Click="OnRecClicked" />
+
+                <Button x:Name="ThemeButton"
+                        Content="&#x2600; Light"
+                        ToolTip.Tip="Switch between Dark and Light mode"
+                        Click="OnThemeToggled" />
+
+            </StackPanel>
+        </Border>
+
+        <!-- Status bar -->
+        <Border x:Name="StatusBar" Grid.Row="2" Background="{DynamicResource AppStatusBg}" Padding="8,3">
+            <TextBlock x:Name="StatusText"
+                       Text="Ready"
+                       Foreground="{DynamicResource AppLabelFg}"
+                       FontSize="11"
+                       TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" />
+        </Border>
+
+        <!-- SidePanel in a Popup: its own top-level HWND floats above VLC's native DirectX
+             child windows, which would otherwise cover an in-tree Avalonia overlay. -->
+        <Popup x:Name="SidePanelPopup"
+               Grid.Row="0"
+               Placement="AnchorAndGravity"
+               PlacementAnchor="TopLeft"
+               PlacementGravity="BottomRight"
+               PlacementTarget="{Binding ElementName=VideoGrid}"
+               Topmost="False"
+               IsLightDismissEnabled="False">
+            <local:SidePanel x:Name="SidePanel" />
+        </Popup>
+
+    </Grid>
+</Window>

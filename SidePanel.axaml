@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:AzIPTV"
+             x:Class="AzIPTV.SidePanel"
+             Width="360"
+             HorizontalAlignment="Left"
+             VerticalAlignment="Stretch">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="{DynamicResource AppInputBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource AppCaretBg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource AppInputBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}"/>
+        </Style>
+        <Style Selector="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
+            <Setter Property="Background" Value="{DynamicResource AppInputBg}"/>
+        </Style>
+        <Style Selector="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#1976D2"/>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppListHoverBg}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource AppPanelBg}">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Margin="10,10,10,10">
+
+            <!-- Search -->
+            <TextBlock Grid.Row="0" Text="SEARCH:"
+                       Foreground="{DynamicResource AppLabelFg}" FontSize="11" Margin="0,0,0,4"/>
+            <TextBox Grid.Row="1" x:Name="SearchBox"
+                     Watermark="search terms..."
+                     Margin="0,0,0,10"
+                     TextChanged="OnSearchChanged"/>
+
+            <!-- Group filter -->
+            <TextBlock Grid.Row="2" Text="TV GROUP:"
+                       Foreground="{DynamicResource AppLabelFg}" FontSize="11" Margin="0,0,0,4"/>
+            <ComboBox Grid.Row="3" x:Name="GroupCombo"
+                      HorizontalAlignment="Stretch"
+                      Margin="0,0,0,10"
+                      SelectionChanged="OnGroupChanged"/>
+
+            <!-- Channel list -->
+            <Grid Grid.Row="4" RowDefinitions="Auto,*">
+                <TextBlock Grid.Row="0" Text="CHANNELS"
+                           Foreground="{DynamicResource AppLabelFg}" FontSize="11" Margin="0,0,0,4"/>
+                <ListBox Grid.Row="1" x:Name="ChannelList"
+                         DoubleTapped="OnChannelDoubleTapped"
+                         KeyDown="OnListKeyDown"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:ChannelVm">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <!-- Logo: TV emoji shows as placeholder when Logo is null -->
+                                <Panel Width="32" Height="32">
+                                    <TextBlock Text="📺"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Center"
+                                               FontSize="18"/>
+                                    <Image Source="{Binding Logo}" Stretch="Uniform"/>
+                                </Panel>
+                                <TextBlock Text="{Binding Name}"
+                                           VerticalAlignment="Center"
+                                           FontSize="13"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+
+        </Grid>
+    </Border>
+</UserControl>

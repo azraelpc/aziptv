@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AzIPTV.UrlInputDialog"
+        Title="Load Playlist from URL"
+        Width="560" Height="420"
+        MinWidth="400" MinHeight="260"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppBarBg}"
+        Icon="/program.ico">
+
+    <Window.Styles>
+        <Style Selector="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="{DynamicResource AppInputBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource AppCaretBg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}"/>
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="{DynamicResource AppButtonBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonFg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="Button:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppButtonHoverBg}"/>
+        </Style>
+        <Style Selector="Button:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppButtonPressBg}"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16,12,16,12">
+
+        <TextBlock Grid.Row="0"
+                   Text="Enter or select a playlist URL:"
+                   Margin="0,0,0,6"/>
+
+        <TextBox Grid.Row="1"
+                 x:Name="UrlBox"
+                 Margin="0,0,0,10"/>
+
+        <!-- History list -->
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource AppListBorder}" BorderThickness="1" CornerRadius="4"
+                Margin="0,0,0,10">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="HistoryPanel" Margin="4,4" Spacing="2"/>
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8"
+                    HorizontalAlignment="Right">
+            <Button x:Name="OkButton"     Content="OK"     Width="80" Click="OnOkClicked"/>
+            <Button x:Name="CancelButton" Content="Cancel" Width="80" Click="OnCancelClicked"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

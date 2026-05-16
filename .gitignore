@@ -1,0 +1,30 @@
+## .NET / MSBuild
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+
+## NuGet
+*.nupkg
+packages/
+NuGet.Config
+
+## Build outputs
+publish/
+*.dll
+*.exe
+*.pdb
+
+## Runtime-generated user data  (never commit personal settings / history)
+user.ini
+
+## OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+## Rider / JetBrains
+.idea/
+*.sln.iml

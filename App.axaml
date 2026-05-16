@@ -1,0 +1,51 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AzIPTV.App"
+             RequestedThemeVariant="Default">
+    <!-- "Default" follows system dark/light mode; override with "Dark" or "Light" if desired. -->
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppBarBg"         Color="#1A1A1A"/>
+                    <SolidColorBrush x:Key="AppStatusBg"      Color="#111111"/>
+                    <SolidColorBrush x:Key="AppButtonBg"      Color="#3A3A3A"/>
+                    <SolidColorBrush x:Key="AppButtonFg"      Color="White"/>
+                    <SolidColorBrush x:Key="AppButtonBorder"  Color="#555555"/>
+                    <SolidColorBrush x:Key="AppButtonHoverBg" Color="#505050"/>
+                    <SolidColorBrush x:Key="AppButtonPressBg" Color="#252525"/>
+                    <SolidColorBrush x:Key="AppTitleFg"       Color="#777777"/>
+                    <SolidColorBrush x:Key="AppLabelFg"       Color="#AAAAAA"/>
+                    <SolidColorBrush x:Key="AppPanelBg"       Color="#D01A1A1A"/>
+                    <SolidColorBrush x:Key="AppInputBg"       Color="#2D2D2D"/>
+                    <SolidColorBrush x:Key="AppListHoverBg"   Color="#404040"/>
+                    <SolidColorBrush x:Key="AppListBorder"    Color="#444444"/>
+                    <SolidColorBrush x:Key="AppCaretBg"       Color="White"/>
+                    <SolidColorBrush x:Key="AppGoldFg"        Color="#FFD700"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="AppBarBg"         Color="#F0F0F0"/>
+                    <SolidColorBrush x:Key="AppStatusBg"      Color="#E0E0E0"/>
+                    <SolidColorBrush x:Key="AppButtonBg"      Color="#E8E8E8"/>
+                    <SolidColorBrush x:Key="AppButtonFg"      Color="#1A1A1A"/>
+                    <SolidColorBrush x:Key="AppButtonBorder"  Color="#BBBBBB"/>
+                    <SolidColorBrush x:Key="AppButtonHoverBg" Color="#D8D8D8"/>
+                    <SolidColorBrush x:Key="AppButtonPressBg" Color="#C0C0C0"/>
+                    <SolidColorBrush x:Key="AppTitleFg"       Color="#555555"/>
+                    <SolidColorBrush x:Key="AppLabelFg"       Color="#666666"/>
+                    <SolidColorBrush x:Key="AppPanelBg"       Color="#E8F5F5F5"/>
+                    <SolidColorBrush x:Key="AppInputBg"       Color="#FFFFFF"/>
+                    <SolidColorBrush x:Key="AppListHoverBg"   Color="#E0E0E0"/>
+                    <SolidColorBrush x:Key="AppListBorder"    Color="#CCCCCC"/>
+                    <SolidColorBrush x:Key="AppCaretBg"       Color="#1A1A1A"/>
+                    <SolidColorBrush x:Key="AppGoldFg"        Color="#B8860B"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+</Application>
