@@ -14,7 +14,7 @@ A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.ne
 - **Auto-retry / circuit-breaker** — automatically restarts on stream errors, pauses after too many consecutive failures
 - **Dark / Light theme** — follows the OS by default, can be overridden and persisted
 - **Fullscreen** — press `F` or double-click the video; controls hide automatically
-- **Native splash screen** — DPI-aware Win32 splash shown immediately on startup, before the UI loads
+- **Native splash screen** — DPI-aware Win32 splash shown immediately on startup, before the UI loads (first run is always slower)
 
 ## Requirements
 
@@ -75,7 +75,7 @@ dotnet run
 Settings and URL history are saved to `user.ini` next to the executable.  
 This file is excluded from version control (see [`.gitignore`](.gitignore)).
 
-Sensitive stream URLs (including any embedded credentials) are stored/encoed in `user.ini` and are **never** shown in full in the status bar — only the hostname is displayed.
+Sensitive stream URLs (including any embedded credentials) are stored/encoded in `user.ini` and **never** shown in full in the status bar — only the hostname is displayed.
 
 ## Dependencies
 
