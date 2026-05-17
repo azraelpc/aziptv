@@ -6,7 +6,7 @@ A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.ne
 
 - **M3U / M3U8 playlist support** — load from a URL or a local file
 - **Channel browser** — side panel with full-text search and group (TV category) filter
-- **Keyboard-first navigation** — move through the channel list, search box, and group picker entirely from the keyboard
+- **Keyboard-first navigation** — move through the channel list, search box, and groups entirely from the keyboard
 - **URL history** — save and name your favourite playlists; window title shows the active playlist name
 - **Volume control** — mouse wheel, numpad `+`/`-`, or `M` to mute; fullscreen overlay shows the current level
 - **Always-on-top** — pin the window above other apps
