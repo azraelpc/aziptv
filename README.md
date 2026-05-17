@@ -28,7 +28,7 @@ A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.ne
 ## Build
 
 ```bash
-git clone https://github.com/<your-username>/AzIPTV.git
+git clone https://github.com/azraelpc/aziptv.git
 cd AzIPTV
 dotnet build -c Release
 ```
@@ -75,7 +75,7 @@ dotnet run
 Settings and URL history are saved to `user.ini` next to the executable.  
 This file is excluded from version control (see [`.gitignore`](.gitignore)).
 
-Sensitive stream URLs (including any embedded credentials) are stored **base64-encoded** in `user.ini` and are **never** shown in full in the status bar — only the hostname is displayed.
+Sensitive stream URLs (including any embedded credentials) are stored/encoed in `user.ini` and are **never** shown in full in the status bar — only the hostname is displayed.
 
 ## Dependencies
 
