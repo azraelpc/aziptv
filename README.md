@@ -115,6 +115,11 @@ Sensitive stream URLs (including any embedded credentials) are **never** stored 
 
 All dependencies are restored automatically via NuGet on first build.
 
+## Hints
+
+- If the recorded TS gets frozen (mostly because stream (disc)connection problems during it was recorded), you can fix the TS file by:
+| ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recording_fixed.ts
+
 ## Todo
 
 - EPG Helper (map Movistar or similar list's channels to m3u list channel and proxy).
