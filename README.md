@@ -118,6 +118,7 @@ All dependencies are restored automatically via NuGet on first build.
 ## Hints
 
 - If the recorded TS gets frozen (mostly because stream (disc)connection problems during it was recorded), you can fix the TS file by running:
+
 ```bash
 ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recording_fixed.ts
 ```
