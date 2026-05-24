@@ -74,15 +74,8 @@ public static class PlaylistService
         return "Dark";
     }
 
-    /// <summary>Returns true (default) unless user.ini explicitly has RemoveDuplicateChannels=0.</summary>
-    public static bool LoadRemoveDuplicates()
-    {
-        if (!File.Exists(IniPath)) return true;
-        foreach (var line in File.ReadLines(IniPath))
-            if (TryGet(line, "RemoveDuplicateChannels=", out var v))
-                return v != "0";
-        return true; // absent → enabled by default
-    }
+    /// <summary>Always returns false — duplicate removal is disabled.</summary>
+    public static bool LoadRemoveDuplicates() => false;
 
     /// <summary>Returns the saved UI language ("en" or "es"). Defaults to "en".</summary>
     public static string LoadLanguage()
@@ -163,7 +156,7 @@ public static class PlaylistService
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("[AzIPTV]");
         sb.AppendLine($"Theme={theme}");
-        sb.AppendLine($"RemoveDuplicateChannels={(LoadRemoveDuplicates() ? 1 : 0)}");
+        sb.AppendLine($"RemoveDuplicateChannels=0");
         sb.AppendLine($"Language={(string.IsNullOrEmpty(language) ? LoadLanguage() : language)}");
         sb.AppendLine($"LastGroup={(string.IsNullOrEmpty(lastGroup) ? LoadLastGroup() : lastGroup)}");
         sb.AppendLine($"RecordingFolder={Encode(string.IsNullOrEmpty(recordingFolder) ? LoadRecordingFolder() : recordingFolder)}");

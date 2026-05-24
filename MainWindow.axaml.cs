@@ -54,6 +54,12 @@ public partial class MainWindow : Window
     private DispatcherTimer? _volumeOverlayTimer;
     private DispatcherTimer? _titleUpdateTimer;
 
+    // VOD seek bar (additive Netflix model)
+    private DispatcherTimer? _positionTimer;
+    private DispatcherTimer? _seekCommitTimer;
+    private long             _seekAccumulatorMs;
+    private bool             _seekBarDragging;
+
     private static readonly string?[] AspectRatios =
         { null, "1:1", "4:3", "16:9", "16:10", "2.21:1", "2.35:1", "2.39:1", "5:4" };
     private int _aspectRatioIndex = 0;
@@ -98,6 +104,7 @@ public partial class MainWindow : Window
         _mediaPlayer.Playing          += OnVlcPlaying;
         _mediaPlayer.Stopped          += OnVlcStopped;
         _mediaPlayer.Paused           += OnVlcPaused;
+        _mediaPlayer.LengthChanged    += OnVlcLengthChanged;
 
         VideoHost.HwndCreated += hwnd =>
         {
@@ -125,6 +132,16 @@ public partial class MainWindow : Window
         // Strip WS_EX_TOPMOST from the Popup HWND each time it opens;
         // Avalonia forces all Popups to be system-topmost which we don't want.
         SidePanelPopup.Opened += OnSidePanelPopupOpened;
+
+        // Wire seek bar pointer events so drag doesn't fight the position timer.
+        // Use AddHandler with handledEventsToo:true because Avalonia's Slider marks
+        // PointerPressed as Handled internally, which would suppress the plain += subscription.
+        SeekBar.AddHandler(InputElement.PointerPressedEvent,
+            new EventHandler<PointerPressedEventArgs>((_, _) => _seekBarDragging = true),
+            RoutingStrategies.Bubble, handledEventsToo: true);
+        SeekBar.AddHandler(InputElement.PointerReleasedEvent,
+            new EventHandler<PointerReleasedEventArgs>((_, _) => { _seekBarDragging = false; CommitSeekBarPosition(); }),
+            RoutingStrategies.Bubble, handledEventsToo: true);
 
         Closing += OnClosing;
 
@@ -198,9 +215,11 @@ public partial class MainWindow : Window
             PinButton.Content        = T("📌 On Top",         "📌 Encima");
             HelpButton.Content       = T("❓ Help (H)",        "❓ Ayuda (H)");
             LangButton.Content       = _uiLang == "en" ? "EN" : "ES";
-            PlayButton.Content = (_mediaPlayer?.IsPlaying == true)
-                ? T("\u23F9  Stop (P)", "\u23F9  Stop (P)")
-                : T("\u25B6  Play (P)", "\u25B6  Play (P)");
+            PlayButton.Content = _mediaPlayer?.IsPlaying == true
+                ? T("\u23F8  Pause (P)",  "\u23F8  Pausa (P)")
+                : (_mediaPlayer?.State == VLCState.Paused && _mediaPlayer?.IsSeekable == true)
+                    ? T("\u25B6  Resume (P)", "\u25B6  Reanudar (P)")
+                    : T("\u25B6  Play (P)",   "\u25B6  Play (P)");
             if (_isRecording)
                 RecButton.Content = T("⏹ STOP REC (R)", "⏹ STOP REC (R)");
             else if (_recScheduleTimer == null)
@@ -469,7 +488,9 @@ public partial class MainWindow : Window
     {
         if (_mediaPlayer is null) return;
         if (_mediaPlayer.IsPlaying)
-            _mediaPlayer.Stop();
+            _mediaPlayer.Pause(); // freeze on last frame instead of white window
+        else if (_mediaPlayer.State == VLCState.Paused && _mediaPlayer.IsSeekable)
+            _mediaPlayer.Play();  // resume VOD from paused position
         else
             PlayStream();
     }
@@ -479,7 +500,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                PlayButton.Content = T("\u23F9  Stop (P)", "\u23F9  Stop (P)");
+                PlayButton.Content = T("\u23F8  Pause (P)", "\u23F8  Pausa (P)");
                 // Debounce: cancel any pending update before scheduling a new one.
                 _titleUpdateTimer?.Stop();
                 _titleUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
@@ -501,22 +522,124 @@ public partial class MainWindow : Window
     private void OnVlcStopped(object? sender, EventArgs e)
         => Dispatcher.UIThread.Post(() =>
         {
-            try { PlayButton.Content = T("\u25B6  Play (P)", "\u25B6  Play (P)"); }
+            try
+            {
+                PlayButton.Content = T("\u25B6  Play (P)", "\u25B6  Play (P)");
+                HideVodBar();
+            }
             catch (Exception ex) { AppLogger.LogException("OnVlcStopped", ex); }
         });
 
     private void OnVlcPaused(object? sender, EventArgs e)
         => Dispatcher.UIThread.Post(() =>
         {
-            try { PlayButton.Content = T("\u25B6  Play (P)", "\u25B6  Play (P)"); }
+            try
+            {
+                PlayButton.Content = (_mediaPlayer?.IsSeekable == true)
+                    ? T("\u25B6  Resume (P)", "\u25B6  Reanudar (P)")
+                    : T("\u25B6  Play (P)",   "\u25B6  Play (P)");
+            }
             catch (Exception ex) { AppLogger.LogException("OnVlcPaused", ex); }
         });
+
+    private void OnVlcLengthChanged(object? sender, MediaPlayerLengthChangedEventArgs e)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                if (e.Length > 0 && _mediaPlayer?.IsSeekable == true)
+                    ShowVodBar(e.Length);
+                else
+                    HideVodBar();
+            }
+            catch (Exception ex) { AppLogger.LogException("OnVlcLengthChanged", ex); }
+        });
+
+    // ── VOD seek bar ──────────────────────────────────────────────────────────
+
+    private void ShowVodBar(long totalMs)
+    {
+        TotalTimeText.Text = FormatTime(totalMs);
+        VodBar.IsVisible   = true;
+        _positionTimer?.Stop();
+        _positionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _positionTimer.Tick += (_, _) => UpdateSeekBar();
+        _positionTimer.Start();
+    }
+
+    private void HideVodBar()
+    {
+        VodBar.IsVisible = false;
+        _positionTimer?.Stop();
+        _positionTimer = null;
+        _seekCommitTimer?.Stop();
+        _seekCommitTimer   = null;
+        _seekAccumulatorMs = 0;
+        _seekBarDragging   = false;
+        CurrentTimeText.Text = "0:00";
+        TotalTimeText.Text   = "0:00";
+        SeekBar.Value        = 0;
+    }
+
+    private void UpdateSeekBar()
+    {
+        if (_mediaPlayer is null || _seekBarDragging) return;
+        var time   = _mediaPlayer.Time;
+        var length = _mediaPlayer.Length;
+        if (length > 0)
+        {
+            SeekBar.Value        = (double)time / length;
+            CurrentTimeText.Text = FormatTime(time);
+        }
+    }
+
+    private void CommitSeekBarPosition()
+    {
+        if (_mediaPlayer is null) return;
+        _mediaPlayer.Position = (float)SeekBar.Value;
+    }
+
+    private static string FormatTime(long ms)
+    {
+        if (ms <= 0) return "0:00";
+        var t = TimeSpan.FromMilliseconds(ms);
+        return t.TotalHours >= 1
+            ? $"{(int)t.TotalHours}:{t.Minutes:D2}:{t.Seconds:D2}"
+            : $"{t.Minutes}:{t.Seconds:D2}";
+    }
+
     private void OnFullscreenClicked(object? sender, RoutedEventArgs e) => ToggleFullScreen();
 
     private void OnPinToggled(object? sender, RoutedEventArgs e)
     {
         Topmost = PinButton.IsChecked == true;
         AppLogger.Log(Topmost ? "Pinned — always on top" : "Unpinned");
+    }
+
+    private void OnSeekBackClicked(object? sender, RoutedEventArgs e)    => AccumulateSeek(-5_000);
+    private void OnSeekForwardClicked(object? sender, RoutedEventArgs e) => AccumulateSeek(5_000);
+
+    private void AccumulateSeek(long deltaMs)
+    {
+        if (_mediaPlayer is null || !_mediaPlayer.IsSeekable) return;
+        _seekAccumulatorMs += deltaMs;
+        _seekCommitTimer?.Stop();
+        _seekCommitTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+        _seekCommitTimer.Tick += (_, _) =>
+        {
+            _seekCommitTimer!.Stop();
+            _seekCommitTimer = null;
+            if (_mediaPlayer is not null)
+            {
+                var newTime = Math.Clamp(_mediaPlayer.Time + _seekAccumulatorMs, 0, _mediaPlayer.Length);
+                _mediaPlayer.Time = newTime;
+            }
+            _seekAccumulatorMs = 0;
+        };
+        _seekCommitTimer.Start();
+        var absS  = Math.Abs(_seekAccumulatorMs / 1000);
+        var label = _seekAccumulatorMs >= 0 ? $"\u23e9 +{absS}s" : $"\u23ea -{absS}s";
+        ShowVolumeOverlay(label);
     }
 
     private async void OnRecClicked(object? sender, RoutedEventArgs e)
@@ -958,6 +1081,12 @@ public partial class MainWindow : Window
             case 0x54: // VK_T — subtitle track (text)
                 if (!panelOpen) NextSubtitleTrack();
                 break;
+            case 0x25: // VK_LEFT — seek back 5 s (VOD)
+                if (!panelOpen) AccumulateSeek(-5_000);
+                break;
+            case 0x27: // VK_RIGHT — seek forward 5 s (VOD)
+                if (!panelOpen) AccumulateSeek(5_000);
+                break;
         }
     }
 
@@ -1010,6 +1139,12 @@ public partial class MainWindow : Window
                 break;
             case Key.T:
                 if (!panelOpen) { NextSubtitleTrack(); e.Handled = true; }
+                break;
+            case Key.Left:
+                if (!panelOpen) { AccumulateSeek(-5_000); e.Handled = true; }
+                break;
+            case Key.Right:
+                if (!panelOpen) { AccumulateSeek(5_000); e.Handled = true; }
                 break;
             case Key.I:
                 if (!panelOpen)
@@ -1363,6 +1498,9 @@ public partial class MainWindow : Window
             _mediaPlayer.Playing          -= OnVlcPlaying;
             _mediaPlayer.Stopped          -= OnVlcStopped;
             _mediaPlayer.Paused           -= OnVlcPaused;
+            _mediaPlayer.LengthChanged    -= OnVlcLengthChanged;
+            _positionTimer?.Stop();
+            _seekCommitTimer?.Stop();
             _mediaPlayer.Stop();
             _mediaPlayer.Dispose();
         }

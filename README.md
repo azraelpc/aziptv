@@ -7,7 +7,7 @@ A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.ne
 
 ## Features
 
-- **M3U / M3U8 playlist support** — load from a URL or a local file; duplicate stream URLs can be automatically removed (`RemoveDuplicateChannels=1` in `user.ini`)
+- **M3U / M3U8 playlist support** — load from a URL or a local file; duplicate URLs are ignored (deduplication is always off)
 - **Channel browser** — side panel with full-text search and group (TV category) filter
 - **FAVOURITES (MOST VIEWED) group** — channels you have played at least once are automatically ranked by play count at the top of the group list; counts are stored per-playlist in `user.ini`; a **Clear Favourites** entry at the bottom of the list resets all counters (with confirmation)
 - **Keyboard-first navigation** — move through the channel list, search box, and group picker entirely from the keyboard
@@ -18,6 +18,8 @@ A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.ne
 - **Auto-retry / circuit-breaker** — automatically restarts on stream errors, stays alive during active recordings
 - **Dark / Light theme** — follows the OS by default, can be overridden and persisted
 - **Fullscreen** — press `F` or double-click the video; controls hide automatically; `Esc` always exits
+- **Pause / freeze** — pressing `P` on a live stream pauses and freezes the last frame (no white flash); pressing again reconnects; on VOD it resumes from the paused position
+- **VOD playback controls** — when a seekable / on-demand stream is detected, a seek bar row appears below the toolbar showing current and total time; click anywhere on the bar to jump to that position; `←` / `→` (or the **-5s** / **+5s** buttons) use an additive seek model: each press accumulates ±5 s (shown in an overlay as `⏪ -10s`, `⏩ +15s`, …) and commits with a single seek 800 ms after the last press — same feel as Netflix or Plex
 - **Aspect ratio cycling** — rotate through standard ratios or reset to default via right-click menu
 - **Audio & subtitle track selection** — cycle tracks or disable subtitles from the right-click menu
 - **Volume preset submenu** — set volume to 0 / 10 / 25 / 50 / 75 / 100 / 150 / 200 % via right-click
@@ -59,13 +61,14 @@ dotnet run
 |-----|--------|
 | `Tab` | Toggle channel browser |
 | `Esc` | Close channel browser / exit fullscreen |
-| `P` | Play / Stop |
+| `P` | Play / Pause — pauses (freezes frame) on live; resumes on VOD |
 | `F` | Toggle fullscreen |
 | `U` | Load playlist from URL |
 | `L` | Load playlist from file |
 | `A` | Next aspect ratio |
 | `S` | Next audio track |
 | `T` | Next subtitle track |
+| `←` / `→` | Seek −5 s / +5 s (VOD only — additive, commits after 800 ms) |
 | `R` | Open recording scheduler (start now or scheduled, optional duration + auto-close) |
 | `I` | Show stream info overlay (codec, resolution, fps, audio — 10 s, click, or press `I` again to dismiss) |
 | `M` | Mute / Unmute |
@@ -98,7 +101,7 @@ This file is excluded from version control (see [`.gitignore`](.gitignore)).
 |-----|-------------|---------|
 | `Theme` | `Dark` or `Light` | `Dark` |
 | `Language` | `en` or `es` | `en` |
-| `RemoveDuplicateChannels` | `1` removes duplicate stream URLs on load | `1` |
+| `RemoveDuplicateChannels` | Always written as `0`; deduplication is permanently disabled | `0` |
 | `PlaylistUrl` / `PlaylistFile` | Last loaded playlist | — |
 | `LastStreamUrl` | Last played stream URL | — |
 | `LastGroup` | Last selected TV group in the channel browser | — |
@@ -131,6 +134,15 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 ---
 
 ## Changelog
+
+### 2026-05-24 (VOD + pause)
+
+- **Pause instead of Stop** — `P` (and the Play button) now **pauses** playback, freezing the last rendered frame instead of clearing the video surface (no more white/blank window); for VOD streams pressing `P` again **resumes** from the paused position; for live streams it reconnects; button label reflects state: ⏸ Pause / ▶ Resume / ▶ Play
+- **VOD seek bar** — when a seekable / on-demand stream is detected (`IsSeekable && Length > 0`), a second row appears below the toolbar with: current time · progress slider · total time · **-5s** and **+5s** buttons; the bar hides automatically for live channels
+- **Additive seek (Netflix model)** — each press of **-5s** / **+5s** (or `←` / `→`) accumulates: first press ±5 s, second rapid press ±10 s, etc.; the running total is shown in the volume overlay (e.g. `⏩ +15s`); a single seek is committed 800 ms after the last press
+- **Seek bar click-to-position** — clicking anywhere on the progress bar seeks to that exact position; fixed an Avalonia event-handling issue where Slider's internal `PointerPressed` handler (which marks the event as handled) was suppressing our drag-flag setter, causing the position timer to overwrite the clicked value before the seek fired
+- **`←` / `→` keyboard shortcuts** — seek back / forward 5 s (VOD only, same additive model); added to the Help dialog
+- **Duplicate channels** — `RemoveDuplicateChannels` INI setting is now ignored; duplicates are always kept (written as `0` to `user.ini`)
 
 ### 2026-05-24 (later)
 

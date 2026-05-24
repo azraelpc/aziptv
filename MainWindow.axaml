@@ -58,52 +58,72 @@
 
         <!-- Controls bar -->
         <Border x:Name="ControlsBar" Grid.Row="1" Background="{DynamicResource AppBarBg}" Padding="8,6">
-            <StackPanel Orientation="Horizontal" Spacing="5"
-                        HorizontalAlignment="Center" VerticalAlignment="Center">
+            <StackPanel Orientation="Vertical" Spacing="4">
 
-                <Button x:Name="ChannelsButton"
-                        Content="&#x1F4FA; Channels (Tab)"
-                        Click="OnChannelsClicked" />
+                <StackPanel Orientation="Horizontal" Spacing="5"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
 
-                <Button x:Name="PlayButton"
-                        Content="&#x25B6;  Play (P)"
-                        Click="OnPlayClicked" />
+                    <Button x:Name="ChannelsButton"
+                            Content="&#x1F4FA; Channels (Tab)"
+                            Click="OnChannelsClicked" />
 
-                <Button x:Name="FullscreenButton"
-                        Content="&#x25A1;  Fullscreen (F)"
-                        Click="OnFullscreenClicked" />
+                    <Button x:Name="PlayButton"
+                            Content="&#x25B6;  Play (P)"
+                            Click="OnPlayClicked" />
 
-                <Button x:Name="LoadUrlButton"
-                        Content="&#x1F310; Load URL (U)"
-                        Click="OnLoadFromUrlClicked" />
+                    <Button x:Name="FullscreenButton"
+                            Content="&#x25A1;  Fullscreen (F)"
+                            Click="OnFullscreenClicked" />
 
-                <Button x:Name="LoadFileButton"
-                        Content="&#x1F4C1; Load File (L)"
-                        Click="OnLoadFromFileClicked" />
+                    <Button x:Name="LoadUrlButton"
+                            Content="&#x1F310; Load URL (U)"
+                            Click="OnLoadFromUrlClicked" />
 
-                <ToggleButton x:Name="PinButton"
-                              Content="&#x1F4CC; On Top"
-                              ToolTip.Tip="Always on top"
-                              Click="OnPinToggled" />
+                    <Button x:Name="LoadFileButton"
+                            Content="&#x1F4C1; Load File (L)"
+                            Click="OnLoadFromFileClicked" />
 
-                <Button x:Name="RecButton"
-                        Content="&#x23FA; REC (R)"
-                        Click="OnRecClicked" />
+                    <ToggleButton x:Name="PinButton"
+                                  Content="&#x1F4CC; On Top"
+                                  ToolTip.Tip="Always on top"
+                                  Click="OnPinToggled" />
 
-                <Button x:Name="ThemeButton"
-                        Content="&#x2600; Light"
-                        ToolTip.Tip="Switch between Dark and Light mode"
-                        Click="OnThemeToggled" />
+                    <Button x:Name="RecButton"
+                            Content="&#x23FA; REC (R)"
+                            Click="OnRecClicked" />
 
-                <Button x:Name="HelpButton"
-                        Content="&#x2753; Help (H)"
-                        ToolTip.Tip="Keyboard shortcuts"
-                        Click="OnHelpClicked" />
+                    <Button x:Name="ThemeButton"
+                            Content="&#x2600; Light"
+                            ToolTip.Tip="Switch between Dark and Light mode"
+                            Click="OnThemeToggled" />
 
-                <Button x:Name="LangButton"
-                        Content="EN"
-                        ToolTip.Tip="Switch language / Cambiar idioma"
-                        Click="OnLangClicked" />
+                    <Button x:Name="HelpButton"
+                            Content="&#x2753; Help (H)"
+                            ToolTip.Tip="Keyboard shortcuts"
+                            Click="OnHelpClicked" />
+
+                    <Button x:Name="LangButton"
+                            Content="EN"
+                            ToolTip.Tip="Switch language / Cambiar idioma"
+                            Click="OnLangClicked" />
+
+                </StackPanel>
+
+                <!-- VOD seek bar: only visible for seekable/VOD content -->
+                <Grid x:Name="VodBar" IsVisible="False" Margin="4,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button    x:Name="SeekBackButton"    Grid.Column="0" Content="-5s" Click="OnSeekBackClicked"    ToolTip.Tip="Seek back 5 s (&#x2190;)" />
+                    <TextBlock x:Name="CurrentTimeText"   Grid.Column="1" Text="0:00"  VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource AppLabelFg}" Margin="8,0" />
+                    <Slider    x:Name="SeekBar"           Grid.Column="2" Minimum="0" Maximum="1" Value="0" VerticalAlignment="Center" />
+                    <TextBlock x:Name="TotalTimeText"     Grid.Column="3" Text="0:00"  VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource AppLabelFg}" Margin="8,0" />
+                    <Button    x:Name="SeekForwardButton" Grid.Column="4" Content="+5s" Click="OnSeekForwardClicked" ToolTip.Tip="Seek forward 5 s (&#x2192;)" />
+                </Grid>
 
             </StackPanel>
         </Border>
