@@ -185,6 +185,11 @@ public class VideoView : NativeControlHost
                         catch (Exception ex) { AppLogger.LogException("VideoClick", ex); }
                     });
                 }
+                else if (msg == NativeMethods.WM_MOUSEMOVE)
+                {
+                    // VLC's child HWNDs hide the system cursor — restore the arrow on every move.
+                    NativeMethods.SetCursor(NativeMethods.LoadCursor(IntPtr.Zero, NativeMethods.IDC_ARROW));
+                }
                 else if (msg == NativeMethods.WM_RBUTTONUP)
                 {
                     int sx = data.pt.x, sy = data.pt.y;
@@ -274,6 +279,7 @@ internal static class NativeMethods
     public const int  WH_KEYBOARD_LL = 13;
     public const int  WM_KEYDOWN     = 0x0100;
     public const int  WM_SYSKEYDOWN  = 0x0104;
+    public const int  WM_MOUSEMOVE   = 0x0200;
     public const int  WM_LBUTTONDOWN = 0x0201;
     public const int  WM_RBUTTONUP   = 0x0205;
     public const int  WM_MBUTTONUP   = 0x0208;
@@ -391,6 +397,16 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
         int x, int y, int cx, int cy, uint uFlags);
+
+    // ── Cursor ────────────────────────────────────────────────────────────────
+
+    public static readonly IntPtr IDC_ARROW = new(32512);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr LoadCursor(IntPtr hInstance, IntPtr lpCursorName);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetCursor(IntPtr hCursor);
 
     // ── DWM caption button theming ────────────────────────────────────────
     // DWMWA_USE_IMMERSIVE_DARK_MODE (20) makes DWM draw white min/max/close

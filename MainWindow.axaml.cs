@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -19,24 +20,47 @@ public partial class MainWindow : Window
 {
     private string _currentUrl = string.Empty;
     private string _currentChannelName = string.Empty;
+    private string _currentListTitle = "AzIPTV";
+    private string _currentPlaylistId = string.Empty;
+    private System.Collections.Generic.Dictionary<string, int> _playCounts = new();
+    private Channel? _pendingFavouriteChannel;
 
     // Circuit-breaker: pause playback after 10 consecutive failures within 30 s.
     private int      _consecutiveFails;
     private DateTime _firstFailTime = DateTime.MinValue;
-    private const int    MaxConsecutiveFails  = 10;
+    private const int    MaxConsecutiveFails  = 1000;
     private const double FailWindowSeconds    = 30;
 
     private LibVLC?      _libVlc;
     private MediaPlayer? _mediaPlayer;
     private Media?       _media;
 
-    private bool    _isRecording;
-    private string? _recordingPath;
+    private bool             _isRecording;
+    private bool             _confirmingClose;
+    private string?          _recordingPath;
+    private string           _recordingFolder = string.Empty;
+    private DispatcherTimer? _recScheduleTimer;
+    private DispatcherTimer? _recDurationTimer;
+    private DispatcherTimer? _recCountdownTimer;
+    private DateTime         _recEndTime;
+    private DispatcherTimer? _recBlinkTimer;
+    private DispatcherTimer? _recDiskTimer;
+    private DispatcherTimer? _streamInfoTimer;
+    private bool             _recCloseWhenDone;
 
     // Volume state — owned here so rapid adjustments never race with LibVLC's getter.
     private int              _volume  = 100;
     private bool             _isMuted = false;
     private DispatcherTimer? _volumeOverlayTimer;
+    private DispatcherTimer? _titleUpdateTimer;
+
+    private static readonly string?[] AspectRatios =
+        { null, "1:1", "4:3", "16:9", "16:10", "2.21:1", "2.35:1", "2.39:1", "5:4" };
+    private int _aspectRatioIndex = 0;
+
+    // UI language ("en" or "es") + inline translation helper.
+    private string _uiLang = "en";
+    private string T(string en, string es) => _uiLang == "es" ? es : en;
 
     public MainWindow()
     {
@@ -44,6 +68,10 @@ public partial class MainWindow : Window
         // HwndCreated can start playback the moment the VLC surface is ready.
         var (_, _, lastStreamUrl) = PlaylistService.LoadSettings();
         _currentUrl = lastStreamUrl ?? string.Empty;
+        var savedFolder = PlaylistService.LoadRecordingFolder();
+        _recordingFolder = (!string.IsNullOrEmpty(savedFolder) && Directory.Exists(savedFolder))
+            ? savedFolder
+            : Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
 
         InitializeComponent();
 
@@ -89,8 +117,10 @@ public partial class MainWindow : Window
         VideoHost.VideoMouseWheel    += delta => AdjustVolume(delta > 0 ? 5 : -5);
         VideoHost.VideoMiddleClicked += ToggleMute;
 
-        SidePanel.ChannelSelected     += OnChannelSelected;
-        SidePanel.PanelCloseRequested += CloseSidePanel;
+        SidePanel.ChannelSelected          += OnChannelSelected;
+        SidePanel.PanelCloseRequested      += CloseSidePanel;
+        SidePanel.ClearFavouritesRequested += async () => await ClearFavouritesAsync();
+        SidePanel.GroupSelectionChanged    += group => PlaylistService.SaveLastGroup(group);
 
         // Strip WS_EX_TOPMOST from the Popup HWND each time it opens;
         // Avalonia forces all Popups to be system-topmost which we don't want.
@@ -106,7 +136,9 @@ public partial class MainWindow : Window
         // tree is fully constructed — avoids crashes from UI calls too early.
         Opened += (_, _) =>
         {
+            _uiLang = PlaylistService.LoadLanguage();
             ApplySavedTheme();
+            ApplyLanguage();
             _ = LoadPlaylistOnStartupAsync();
         };
 
@@ -131,7 +163,7 @@ public partial class MainWindow : Window
         Application.Current!.RequestedThemeVariant =
             theme == "Light" ? ThemeVariant.Light : ThemeVariant.Dark;
         // Button label always shows the other option (what you'll switch TO).
-        ThemeButton.Content = theme == "Light" ? "☀ Light" : "🌙 Dark";
+        ThemeButton.Content = theme == "Light" ? T("☀ Light", "☀ Claro") : T("🌙 Dark", "🌙 Oscuro");
     }
 
     private void OnThemeToggled(object? sender, RoutedEventArgs e)
@@ -142,7 +174,54 @@ public partial class MainWindow : Window
         PlaylistService.SaveTheme(next);
     }
 
-    // ── Startup ───────────────────────────────────────────────────────────────
+    // ── Language ───────────────────────────────────────────────────────────
+
+    private void OnLangClicked(object? sender, RoutedEventArgs e)
+    {
+        _uiLang = _uiLang == "en" ? "es" : "en";
+        PlaylistService.SaveLanguage(_uiLang);
+        // Re-render theme button label with new language before full apply.
+        var thm = Application.Current!.RequestedThemeVariant == ThemeVariant.Light ? "Light" : "Dark";
+        SetTheme(thm);
+        ApplyLanguage();
+    }
+
+    private void ApplyLanguage()
+    {
+        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(ApplyLanguage); return; }
+        try
+        {
+            ChannelsButton.Content   = T("📺 Channels (Tab)", "📺 Canales (Tab)");
+            FullscreenButton.Content = T("□  Fullscreen (F)",  "□  Pantalla (F)");
+            LoadUrlButton.Content    = T("🌐 Load URL (U)",   "🌐 URL (U)");
+            LoadFileButton.Content   = T("📁 Load File (L)", "📁 Archivo (L)");
+            PinButton.Content        = T("📌 On Top",         "📌 Encima");
+            HelpButton.Content       = T("❓ Help (H)",        "❓ Ayuda (H)");
+            LangButton.Content       = _uiLang == "en" ? "EN" : "ES";
+            PlayButton.Content = (_mediaPlayer?.IsPlaying == true)
+                ? T("\u23F9  Stop (P)", "\u23F9  Stop (P)")
+                : T("\u25B6  Play (P)", "\u25B6  Play (P)");
+            if (_isRecording)
+                RecButton.Content = T("⏹ STOP REC (R)", "⏹ STOP REC (R)");
+            else if (_recScheduleTimer == null)
+                RecButton.Content = T("⏺ REC (R)", "⏺ REC (R)");
+            // else: keep the ⏳ scheduled text intact
+        }
+        catch (Exception ex) { AppLogger.LogException("ApplyLanguage", ex); }
+    }
+
+    // ── Help ──────────────────────────────────────────────────────────────
+
+    private void OnHelpClicked(object? sender, RoutedEventArgs e) => ShowHelp();
+
+    private void ShowHelp()
+    {
+        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(ShowHelp); return; }
+        var dlg = new HelpDialog(_uiLang);
+        _ = dlg.ShowDialog(this);
+    }
+
+    // ── Startup ──────────────────────────────────────────────────────────────
 
     private async Task LoadPlaylistOnStartupAsync()
     {
@@ -150,6 +229,8 @@ public partial class MainWindow : Window
 
         if (!string.IsNullOrEmpty(playlistUrl))
         {
+            _currentPlaylistId = PlaylistService.GetPlaylistId(playlistUrl);
+            _playCounts = PlaylistService.LoadPlayCounts(_currentPlaylistId);
             AppLogger.Log($"Loading playlist from URL…");
             SetLoadingState(true);
             try
@@ -163,6 +244,8 @@ public partial class MainWindow : Window
         }
         else if (!string.IsNullOrEmpty(playlistFile))
         {
+            _currentPlaylistId = PlaylistService.GetPlaylistId(playlistFile);
+            _playCounts = PlaylistService.LoadPlayCounts(_currentPlaylistId);
             AppLogger.Log($"Loading playlist from file: {System.IO.Path.GetFileName(playlistFile)}");
             SetLoadingState(true);
             try
@@ -188,8 +271,8 @@ public partial class MainWindow : Window
             {
                 LoadUrlButton.IsEnabled  = !loading;
                 LoadFileButton.IsEnabled = !loading;
-                LoadUrlButton.Content    = loading ? "⏳ Loading..." : "🌐 Load URL (U)";
-                LoadFileButton.Content   = loading ? "⏳ Loading..." : "📁 Load File (L)";
+                LoadUrlButton.Content    = loading ? T("⏳ Loading...", "⏳ Cargando...") : T("🌐 Load URL (U)", "🌐 URL (U)");
+                LoadFileButton.Content   = loading ? T("⏳ Loading...", "⏳ Cargando...") : T("📁 Load File (L)", "📁 Archivo (L)");
             }
             catch (Exception ex) { AppLogger.LogException("SetLoadingState", ex); }
         });
@@ -215,7 +298,8 @@ public partial class MainWindow : Window
             _media = new Media(_libVlc, new Uri(_currentUrl));
             if (_isRecording && !string.IsNullOrEmpty(_recordingPath))
             {
-                var safePath = _recordingPath.Replace('\\', '/');
+                var actualPath = GetUniqueRecordingPath(_recordingPath);
+                var safePath   = actualPath.Replace('\\', '/');
                 _media.AddOption($":sout=#duplicate{{dst=display,dst=std{{access=file,mux=ts,dst={safePath}}}}}");
                 _media.AddOption(":sout-keep");
             }
@@ -283,9 +367,16 @@ public partial class MainWindow : Window
                 {
                     _consecutiveFails = 0;
                     _firstFailTime    = DateTime.MinValue;
-                    AppLogger.Log($"Too many failures — playback paused.");
-                    _mediaPlayer?.Stop();
-                    return;
+                    if (_isRecording)
+                    {
+                        AppLogger.Log("Too many failures — retrying (recording active)…");
+                    }
+                    else
+                    {
+                        AppLogger.Log("Too many failures — playback paused.");
+                        _mediaPlayer?.Stop();
+                        return;
+                    }
                 }
 
                 // Auto-retry after 500 ms.
@@ -323,10 +414,50 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task ClearFavouritesAsync()
+    {
+        bool confirmed = false;
+        var dlg = new Window
+        {
+            Title                 = T("Clear Favourites", "Borrar Favoritos"),
+            Width                 = 340,
+            SizeToContent         = SizeToContent.Height,
+            CanResize             = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Padding               = new Thickness(16, 14),
+        };
+        var yesBtn = new Button { Content = T("Clear", "Borrar"),   HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 4, 0) };
+        var noBtn  = new Button { Content = T("Cancel", "Cancelar"), HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(4, 0, 0, 0) };
+        yesBtn.Click += (_, _) => { confirmed = true; dlg.Close(); };
+        noBtn.Click  += (_, _) => dlg.Close();
+        var btnRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), Margin = new Thickness(0, 14, 0, 0) };
+        Grid.SetColumn(yesBtn, 0);
+        Grid.SetColumn(noBtn,  1);
+        btnRow.Children.Add(yesBtn);
+        btnRow.Children.Add(noBtn);
+        var root = new StackPanel();
+        root.Children.Add(new TextBlock
+        {
+            Text = T("Clear the Favourites list?",
+                     "\u00bfSeguro que quieres vaciar la lista?"),
+        });
+        root.Children.Add(btnRow);
+        dlg.Content = root;
+        await dlg.ShowDialog(this);
+        if (!confirmed) return;
+
+        _playCounts.Clear();
+        PlaylistService.SavePlayCounts(_currentPlaylistId, _playCounts);
+        SidePanel.UpdatePlayCounts(_playCounts);
+        ShowActionFeedback(T("Favourites cleared", "Favoritos borrados"));
+    }
+
     private void OnChannelSelected(Channel channel)
     {
         AppLogger.Log($"Channel selected: {channel.Name}");
-        _currentChannelName = channel.Name;
+        _currentChannelName       = channel.Name;
+        _pendingFavouriteChannel  = channel;
+        UpdateTitle();
         PlayChannelUrl(channel.Url);
     }
 
@@ -346,21 +477,38 @@ public partial class MainWindow : Window
     private void OnVlcPlaying(object? sender, EventArgs e)
         => Dispatcher.UIThread.Post(() =>
         {
-            try { PlayButton.Content = "\u23F9  Stop (P)"; }
+            try
+            {
+                PlayButton.Content = T("\u23F9  Stop (P)", "\u23F9  Stop (P)");
+                // Debounce: cancel any pending update before scheduling a new one.
+                _titleUpdateTimer?.Stop();
+                _titleUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+                _titleUpdateTimer.Tick += (_, _) => { _titleUpdateTimer!.Stop(); _titleUpdateTimer = null; UpdateTitle(); };
+                _titleUpdateTimer.Start();
+                // Increment play count for user-initiated channel selections.
+                if (_pendingFavouriteChannel is Channel fav && !string.IsNullOrEmpty(_currentPlaylistId))
+                {
+                    _pendingFavouriteChannel = null;
+                    var id = PlaylistService.GetChannelId(fav.Url);
+                    _playCounts[id] = _playCounts.TryGetValue(id, out var cnt) ? cnt + 1 : 1;
+                    PlaylistService.SavePlayCounts(_currentPlaylistId, _playCounts);
+                    SidePanel.UpdatePlayCounts(_playCounts);
+                }
+            }
             catch (Exception ex) { AppLogger.LogException("OnVlcPlaying", ex); }
         });
 
     private void OnVlcStopped(object? sender, EventArgs e)
         => Dispatcher.UIThread.Post(() =>
         {
-            try { PlayButton.Content = "\u25B6  Play (P)"; }
+            try { PlayButton.Content = T("\u25B6  Play (P)", "\u25B6  Play (P)"); }
             catch (Exception ex) { AppLogger.LogException("OnVlcStopped", ex); }
         });
 
     private void OnVlcPaused(object? sender, EventArgs e)
         => Dispatcher.UIThread.Post(() =>
         {
-            try { PlayButton.Content = "\u25B6  Play (P)"; }
+            try { PlayButton.Content = T("\u25B6  Play (P)", "\u25B6  Play (P)"); }
             catch (Exception ex) { AppLogger.LogException("OnVlcPaused", ex); }
         });
     private void OnFullscreenClicked(object? sender, RoutedEventArgs e) => ToggleFullScreen();
@@ -373,11 +521,56 @@ public partial class MainWindow : Window
 
     private async void OnRecClicked(object? sender, RoutedEventArgs e)
     {
-        if (_isRecording) StopRecording();
-        else              await StartRecordingAsync();
+        try
+        {
+        if (_isRecording)            { StopRecording();   return; }
+        if (_recScheduleTimer != null) { CancelSchedule(); return; }
+
+        var dlg = new RecordingScheduleDialog(_uiLang, _recordingFolder);
+        await dlg.ShowDialog(this);
+        if (dlg.Result is null) return;
+        if (!string.IsNullOrEmpty(dlg.RecordingFolder) && dlg.RecordingFolder != _recordingFolder)
+        {
+            _recordingFolder = dlg.RecordingFolder;
+            PlaylistService.SaveRecordingFolder(_recordingFolder);
+        }
+
+        _recCloseWhenDone = dlg.Result.CloseWhenDone;
+        var delay = dlg.Result.StartAt - DateTime.Now;
+        if (delay > TimeSpan.FromSeconds(1))
+        {
+            RecButton.Content = $"\u23F3 REC {dlg.Result.StartAt:HH:mm} (R)";
+            ShowActionFeedback(_uiLang == "es"
+                ? $"Grabaci\u00f3n programada a las {dlg.Result.StartAt:HH:mm}"
+                : $"Recording scheduled for {dlg.Result.StartAt:HH:mm}");
+            var scheduledDuration = dlg.Result.Duration;
+            _recScheduleTimer = new DispatcherTimer { Interval = delay };
+            _recScheduleTimer.Tick += async (_, _) =>
+            {
+                _recScheduleTimer?.Stop();
+                _recScheduleTimer = null;
+                await StartRecordingAsync(scheduledDuration);
+            };
+            _recScheduleTimer.Start();
+        }
+        else
+        {
+            await StartRecordingAsync(dlg.Result.Duration);
+        }
+        }
+        catch (Exception ex) { AppLogger.LogException("OnRecClicked", ex); }
     }
 
-    private async Task StartRecordingAsync()
+    private void CancelSchedule()
+    {
+        _recScheduleTimer?.Stop();
+        _recScheduleTimer = null;
+        _recCloseWhenDone = false;
+        RecButton.Content = T("\u23FA REC (R)", "\u23FA REC (R)");
+        ShowActionFeedback(T("Recording schedule cancelled", "Grabaci\u00f3n cancelada"));
+    }
+
+    private async Task StartRecordingAsync(TimeSpan? duration = null)
     {
         if (string.IsNullOrEmpty(_currentUrl))
         {
@@ -385,30 +578,112 @@ public partial class MainWindow : Window
             return;
         }
 
-        var top     = TopLevel.GetTopLevel(this)!;
-        var folders = await top.StorageProvider.OpenFolderPickerAsync(
-            new FolderPickerOpenOptions { Title = "Select Recording Folder" });
-
-        if (folders.Count == 0) return;
-        var folder = folders[0].TryGetLocalPath();
-        if (string.IsNullOrEmpty(folder)) return;
+        // Use saved folder silently; prompt only when missing/gone.
+        if (string.IsNullOrEmpty(_recordingFolder) || !Directory.Exists(_recordingFolder))
+        {
+            var top     = TopLevel.GetTopLevel(this)!;
+            var folders = await top.StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions { Title = "Select Recording Folder" });
+            if (folders.Count == 0) return;
+            var picked = folders[0].TryGetLocalPath();
+            if (string.IsNullOrEmpty(picked)) return;
+            _recordingFolder = picked;
+            PlaylistService.SaveRecordingFolder(picked);
+        }
 
         var filename   = $"rec_{DateTime.Now:yyyyMMdd_HHmmss}.ts";
-        _recordingPath = Path.Combine(folder, filename);
+        _recordingPath = Path.Combine(_recordingFolder, filename);
         _isRecording   = true;
-        RecButton.Content = "⏹ STOP REC (R)";
+        RecButton.Content = T("⏹ STOP REC (R)", "⏹ STOP REC (R)");
         AppLogger.Log($"Recording started: {filename}");
+        StartRecIndicator();
+
+        if (duration.HasValue)
+        {
+            AppLogger.Log($"Recording duration: {(int)duration.Value.TotalHours}h {duration.Value.Minutes:D2}min");
+            _recDurationTimer = new DispatcherTimer { Interval = duration.Value };
+            _recDurationTimer.Tick += (_, _) =>
+            {
+                _recDurationTimer?.Stop();
+                _recDurationTimer = null;
+                StopRecording();
+                if (_recCloseWhenDone) Close();
+            };
+            _recDurationTimer.Start();
+
+            _recEndTime = DateTime.Now + duration.Value;
+            _recCountdownTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _recCountdownTimer.Tick += (_, _) =>
+            {
+                var remaining = _recEndTime - DateTime.Now;
+                if (remaining <= TimeSpan.Zero) { _recCountdownTimer?.Stop(); _recCountdownTimer = null; return; }
+                RecButton.Content = remaining.TotalHours >= 1
+                    ? $"\u23f9 STOP  {(int)remaining.TotalHours}:{remaining.Minutes:D2}:{remaining.Seconds:D2} (R)"
+                    : $"\u23f9 STOP  {remaining.Minutes:D2}:{remaining.Seconds:D2} (R)";
+            };
+            _recCountdownTimer.Start();
+        }
 
         // Restart the stream with the sout recording chain.
         PlayStream();
     }
 
+    private void StartRecIndicator()
+    {
+        RecDot.Opacity = 1.0;
+        UpdateRecDiskSpace();
+        RecIndicatorPopup.Open();
+        bool dotOn = true;
+        _recBlinkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+        _recBlinkTimer.Tick += (_, _) =>
+        {
+            dotOn = !dotOn;
+            RecDot.Opacity = dotOn ? 1.0 : 0.15;
+        };
+        _recBlinkTimer.Start();
+        // Update disk space every 10 s — DriveInfo is a fast kernel stat, no I/O.
+        _recDiskTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        _recDiskTimer.Tick += (_, _) => UpdateRecDiskSpace();
+        _recDiskTimer.Start();
+    }
+
+    private void StopRecIndicator()
+    {
+        _recBlinkTimer?.Stop();
+        _recBlinkTimer = null;
+        _recDiskTimer?.Stop();
+        _recDiskTimer = null;
+        RecDot.Opacity = 1.0;
+        RecIndicatorPopup.Close();
+    }
+
+    private void UpdateRecDiskSpace()
+    {
+        try
+        {
+            var root = Path.GetPathRoot(_recordingFolder);
+            if (string.IsNullOrEmpty(root)) return;
+            var drive = new System.IO.DriveInfo(root);
+            long free = drive.AvailableFreeSpace;
+            string label = free >= 1_073_741_824L
+                ? $"{free / 1_073_741_824.0:F1} GB free"
+                : $"{free / 1_048_576.0:F0} MB free";
+            RecDiskText.Text = label;
+        }
+        catch { RecDiskText.Text = string.Empty; }
+    }
+
     private void StopRecording()
     {
+        _recDurationTimer?.Stop();
+        _recDurationTimer = null;
+        _recCountdownTimer?.Stop();
+        _recCountdownTimer = null;
+        StopRecIndicator();
         var folder     = Path.GetDirectoryName(_recordingPath);
         _isRecording   = false;
         _recordingPath = null;
-        RecButton.Content = "⏺ REC (R)";
+        RecButton.Content = T("⏺ REC (R)", "⏺ REC (R)");
         AppLogger.Log("Recording stopped.");
 
         // Restart without the sout chain.
@@ -423,6 +698,37 @@ public partial class MainWindow : Window
             }
             catch (Exception ex) { AppLogger.LogException("OpenRecordingFolder", ex); }
         }
+    }
+
+    private static string GetUniqueRecordingPath(string path)
+    {
+        if (!File.Exists(path)) return path;
+        var dir      = Path.GetDirectoryName(path) ?? ".";
+        var nameBase = Path.GetFileNameWithoutExtension(path);
+        var ext      = Path.GetExtension(path);
+        for (int i = 1; i <= 9999; i++)
+        {
+            var candidate = Path.Combine(dir, $"{nameBase}_{i:D3}{ext}");
+            if (!File.Exists(candidate)) return candidate;
+        }
+        return path;
+    }
+
+    private void UpdateTitle()
+    {
+        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(UpdateTitle); return; }
+        var title = _currentListTitle;
+        if (!string.IsNullOrEmpty(_currentChannelName))
+            title += $" — {_currentChannelName}";
+        if (_mediaPlayer is not null)
+        {
+            uint w = 0, h = 0;
+            _mediaPlayer.Size(0, ref w, ref h);
+            var fps = _mediaPlayer.Fps;
+            if (w > 0 && h > 0)
+                title += fps > 0 ? $" — {w}x{h}@{(int)Math.Round(fps)}" : $" — {w}x{h}";
+        }
+        Title = title;
     }
 
     private async void OnLoadFromUrlClicked(object? sender, RoutedEventArgs e)
@@ -457,6 +763,8 @@ public partial class MainWindow : Window
                     PlaylistService.UpdateUrlName(url, name);
             }
 
+            _currentPlaylistId = PlaylistService.GetPlaylistId(url);
+            _playCounts = PlaylistService.LoadPlayCounts(_currentPlaylistId);
             AfterPlaylistLoaded(result, playFirst: true, listTitle: ResolveUrlListName(url));
         }
         catch (Exception ex) { AppLogger.LogException("LoadFromUrl", ex); }
@@ -488,6 +796,8 @@ public partial class MainWindow : Window
             var result = await PlaylistService.LoadFromFileAsync(path);
             PlaylistService.SaveSettings(null, path);
             AppLogger.Log($"Playlist loaded: {result.Channels.Count} channels");
+            _currentPlaylistId = PlaylistService.GetPlaylistId(path);
+            _playCounts = PlaylistService.LoadPlayCounts(_currentPlaylistId);
             AfterPlaylistLoaded(result, playFirst: true, listTitle: Path.GetFileNameWithoutExtension(path));
         }
         catch (Exception ex) { AppLogger.LogException("LoadFromFile", ex); }
@@ -505,8 +815,22 @@ public partial class MainWindow : Window
             });
             return;
         }
-        Title = string.IsNullOrEmpty(listTitle) ? "AzIPTV" : $"AzIPTV — {listTitle}";
-        SidePanel.LoadChannels(result);
+        _currentListTitle   = string.IsNullOrEmpty(listTitle) ? "AzIPTV" : $"AzIPTV — {listTitle}";
+        _currentChannelName = string.Empty;
+
+        // On startup (playFirst=false) the last URL is already playing but the
+        // channel name was never restored — find it in the freshly loaded list.
+        if (!playFirst && !string.IsNullOrEmpty(_currentUrl))
+        {
+            var match = result.Channels.FirstOrDefault(c =>
+                string.Equals(c.Url, _currentUrl, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+                _currentChannelName = match.Name;
+        }
+
+        UpdateTitle();
+        SidePanel.LoadChannels(result, _playCounts);
+        SidePanel.TrySelectGroup(PlaylistService.LoadLastGroup());
         OpenSidePanel();
         if (playFirst && result.Channels.Count > 0)
         {
@@ -596,6 +920,7 @@ public partial class MainWindow : Window
                 break;
             case 0x1B: // VK_ESCAPE
                 if (panelOpen) CloseSidePanel();
+                else if (WindowState == WindowState.FullScreen) ToggleFullScreen();
                 break;
             case 0x46: // VK_F
                 if (!panelOpen) ToggleFullScreen();
@@ -621,6 +946,18 @@ public partial class MainWindow : Window
             case 0x4D: // VK_M
                 if (!panelOpen) ToggleMute();
                 break;
+            case 0x48: // VK_H
+                if (!panelOpen) ShowHelp();
+                break;
+            case 0x41: // VK_A — aspect ratio
+                if (!panelOpen) NextAspectRatio();
+                break;
+            case 0x53: // VK_S — audio track (sound)
+                if (!panelOpen) NextAudioTrack();
+                break;
+            case 0x54: // VK_T — subtitle track (text)
+                if (!panelOpen) NextSubtitleTrack();
+                break;
         }
     }
 
@@ -636,6 +973,7 @@ public partial class MainWindow : Window
                 break;
             case Key.Escape:
                 if (panelOpen) { CloseSidePanel(); e.Handled = true; }
+                else if (WindowState == WindowState.FullScreen) { ToggleFullScreen(); e.Handled = true; }
                 break;
             case Key.F:
                 if (!panelOpen) { ToggleFullScreen(); e.Handled = true; }
@@ -660,6 +998,26 @@ public partial class MainWindow : Window
                 break;
             case Key.M:
                 if (!panelOpen) { ToggleMute(); e.Handled = true; }
+                break;
+            case Key.H:
+                if (!panelOpen) { ShowHelp(); e.Handled = true; }
+                break;
+            case Key.A:
+                if (!panelOpen) { NextAspectRatio(); e.Handled = true; }
+                break;
+            case Key.S:
+                if (!panelOpen) { NextAudioTrack(); e.Handled = true; }
+                break;
+            case Key.T:
+                if (!panelOpen) { NextSubtitleTrack(); e.Handled = true; }
+                break;
+            case Key.I:
+                if (!panelOpen)
+                {
+                    if (StreamInfoPopup.IsOpen) StopStreamInfo();
+                    else ShowStreamInfo();
+                    e.Handled = true;
+                }
                 break;
         }
     }
@@ -686,8 +1044,6 @@ public partial class MainWindow : Window
 
     private void ShowVolumeOverlay(string text)
     {
-        if (WindowState != WindowState.FullScreen) return;
-
         VolumeOverlayText.Text = text;
         if (!VolumeOverlayPopup.IsOpen)
             VolumeOverlayPopup.Open();
@@ -704,33 +1060,301 @@ public partial class MainWindow : Window
         _volumeOverlayTimer.Start();
     }
 
+    /// <summary>Logs msg to the status bar and, when fullscreen, also shows it in the overlay popup.</summary>
+    private void ShowActionFeedback(string msg)
+    {
+        AppLogger.Log(msg);
+        ShowVolumeOverlay(msg);
+    }
+
+    private void ShowStreamInfo()
+    {
+        if (_mediaPlayer is null) return;
+        var sb = new System.Text.StringBuilder();
+
+        if (!string.IsNullOrEmpty(_currentChannelName))
+            sb.AppendLine($"Channel : {_currentChannelName}");
+        if (!string.IsNullOrEmpty(_currentUrl))
+        {
+            var url = _currentUrl.Length > 65 ? _currentUrl[..62] + "..." : _currentUrl;
+            sb.AppendLine($"URL     : {url}");
+        }
+
+        bool hasVideoTrack = false;
+        if (_media is not null)
+        {
+            foreach (var track in _media.Tracks)
+            {
+                var codec = FourCcToString(track.Codec);
+                if (track.TrackType == TrackType.Video)
+                {
+                    sb.AppendLine();
+                    sb.Append($"Video   : {codec}");
+                    if (track.Data.Video.Width > 0)
+                        sb.Append($"  {track.Data.Video.Width}\u00d7{track.Data.Video.Height}");
+                    if (track.Data.Video.FrameRateDen > 0 && track.Data.Video.FrameRateNum > 0)
+                        sb.Append($"  {(double)track.Data.Video.FrameRateNum / track.Data.Video.FrameRateDen:0.##} fps");
+                    if (track.Bitrate > 0)
+                        sb.Append($"  {track.Bitrate / 1000} kbps");
+                    sb.AppendLine();
+                    hasVideoTrack = true;
+                }
+                else if (track.TrackType == TrackType.Audio)
+                {
+                    sb.Append($"Audio   : {codec}");
+                    if (track.Data.Audio.Channels > 0) sb.Append($"  {track.Data.Audio.Channels}ch");
+                    if (track.Data.Audio.Rate > 0)     sb.Append($"  {track.Data.Audio.Rate} Hz");
+                    if (track.Bitrate > 0)             sb.Append($"  {track.Bitrate / 1000} kbps");
+                    if (!string.IsNullOrEmpty(track.Language)) sb.Append($"  [{track.Language}]");
+                    sb.AppendLine();
+                }
+            }
+        }
+
+        if (!hasVideoTrack)
+        {
+            var fps = _mediaPlayer.Fps;
+            sb.AppendLine();
+            sb.Append("Video   : ");
+            sb.AppendLine(fps > 0f ? $"{fps:0.##} fps" : "(info not yet available)");
+        }
+
+        sb.AppendLine();
+        sb.Append($"Volume  : {_volume}%{(_isMuted ? "  [muted]" : "")}");
+
+        StreamInfoText.Text = sb.ToString().TrimEnd();
+        _streamInfoTimer?.Stop();
+        StreamInfoPopup.Close();
+        StreamInfoPopup.Open();
+        _streamInfoTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        _streamInfoTimer.Tick += (_, _) => StopStreamInfo();
+        _streamInfoTimer.Start();
+    }
+
+    private void StopStreamInfo()
+    {
+        _streamInfoTimer?.Stop();
+        _streamInfoTimer = null;
+        StreamInfoPopup.Close();
+    }
+
+    private static string FourCcToString(uint codec)
+    {
+        if (codec == 0) return "?";
+        var c = new char[4];
+        c[0] = (char)(codec & 0xFF);
+        c[1] = (char)((codec >> 8)  & 0xFF);
+        c[2] = (char)((codec >> 16) & 0xFF);
+        c[3] = (char)((codec >> 24) & 0xFF);
+        return new string(c).Trim('\0').ToUpperInvariant();
+    }
+
+    private void OnStreamInfoClick(object? sender, PointerPressedEventArgs e)
+    {
+        StopStreamInfo();
+    }
+
+    private void NextAspectRatio()
+    {
+        if (_mediaPlayer is null) return;
+        _aspectRatioIndex = (_aspectRatioIndex + 1) % AspectRatios.Length;
+        var ratio = AspectRatios[_aspectRatioIndex];
+        _mediaPlayer.AspectRatio = ratio;
+        ShowActionFeedback(T("Aspect ratio: " + (ratio ?? "Default"), "Proporci\u00f3n: " + (ratio ?? "Defecto")));
+    }
+
+    private void ResetAspectRatio()
+    {
+        if (_mediaPlayer is null) return;
+        _aspectRatioIndex = 0;
+        _mediaPlayer.AspectRatio = null;
+        ShowActionFeedback(T("Aspect ratio: Default", "Proporción: Defecto"));
+    }
+
+    private void NextAudioTrack()
+    {
+        if (_mediaPlayer is null) return;
+        var valid = _mediaPlayer.AudioTrackDescription.Where(t => t.Id != -1).ToArray();
+        if (valid.Length == 0) { ShowActionFeedback(T("No audio tracks available", "Sin pistas de audio")); return; }
+        int cur = _mediaPlayer.AudioTrack;
+        int idx  = Array.FindIndex(valid, t => t.Id == cur);
+        int next = (idx + 1) % valid.Length;
+        _mediaPlayer.SetAudioTrack(valid[next].Id);
+        ShowActionFeedback(T($"Audio: {valid[next].Name}", $"Audio: {valid[next].Name}"));
+    }
+
+    private void SetVolumeTo(int percent)
+    {
+        if (_mediaPlayer is null) return;
+        _volume = Math.Clamp(percent, 0, 200);
+        _mediaPlayer.Volume = _volume;
+        ShowActionFeedback(T($"Volume: {_volume}%", $"Volumen: {_volume}%"));
+    }
+
+    private void NextSubtitleTrack()
+    {
+        if (_mediaPlayer is null) return;
+        var valid = _mediaPlayer.SpuDescription.Where(t => t.Id != -1).ToArray();
+        if (valid.Length == 0) { ShowActionFeedback(T("No subtitle tracks available", "Sin subtítulos")); return; }
+        int cur = _mediaPlayer.Spu;
+        int idx  = Array.FindIndex(valid, t => t.Id == cur);
+        // If currently disabled (idx == -1), wrap to 0 (first track).
+        int next = (idx + 1) % valid.Length;
+        _mediaPlayer.SetSpu(valid[next].Id);
+        ShowActionFeedback(T($"Subtitles: {valid[next].Name}", $"Subtítulos: {valid[next].Name}"));
+    }
+
+    private void DisableSubtitles()
+    {
+        if (_mediaPlayer is null) return;
+        _mediaPlayer.SetSpu(-1);
+        ShowActionFeedback(T("Subtitles disabled", "Subtítulos desactivados"));
+    }
+
     // ── Context menu (right-click on video) ───────────────────────────────────
 
     private void ShowContextMenu(int screenX, int screenY)
     {
         const uint MF_STRING       = 0x00000000;
+        const uint MF_SEPARATOR    = 0x00000800;
+        const uint MF_GRAYED       = 0x00000001;
+        const uint MF_POPUP        = 0x00000010;
         const uint TPM_RETURNCMD   = 0x0100;
         const uint TPM_RIGHTBUTTON = 0x0002;
 
+        bool hasUrl    = !string.IsNullOrEmpty(_currentUrl);
+        bool hasPlayer = _mediaPlayer is not null;
+
         IntPtr hMenu = NativeMethods.CreatePopupMenu();
-        NativeMethods.AppendMenu(hMenu, MF_STRING, new UIntPtr(1001), "Fullscreen (F)");
-        NativeMethods.AppendMenu(hMenu, MF_STRING, new UIntPtr(1002), "Channel Browser (Tab)");
+        NativeMethods.AppendMenu(hMenu, MF_STRING,    new UIntPtr(1001), "Fullscreen (F)");
+        NativeMethods.AppendMenu(hMenu, MF_STRING,    new UIntPtr(1002), "Channel Browser (Tab)");
+        NativeMethods.AppendMenu(hMenu, MF_SEPARATOR, new UIntPtr(0),    string.Empty);
+        NativeMethods.AppendMenu(hMenu, MF_STRING | (hasUrl ? 0u : MF_GRAYED), new UIntPtr(1003), "Copy Stream URL");
+        NativeMethods.AppendMenu(hMenu, MF_STRING | (hasPlayer ? 0u : MF_GRAYED), new UIntPtr(1005), "Stream Info (I)");
+        NativeMethods.AppendMenu(hMenu, MF_SEPARATOR, new UIntPtr(0), string.Empty);
+        NativeMethods.AppendMenu(hMenu, MF_STRING, new UIntPtr(1007), "Football TV Guide");
+
+        // ── Aspect ratio ─────────────────────────────────────────────────────
+        NativeMethods.AppendMenu(hMenu, MF_SEPARATOR, new UIntPtr(0), string.Empty);
+        NativeMethods.AppendMenu(hMenu, MF_STRING | (hasPlayer ? 0u : MF_GRAYED), new UIntPtr(2001), "Next Aspect Ratio (A)");
+        NativeMethods.AppendMenu(hMenu, MF_STRING | (hasPlayer ? 0u : MF_GRAYED), new UIntPtr(2002), "Reset Aspect Ratio");
+
+        // ── Audio ─────────────────────────────────────────────────────────────
+        NativeMethods.AppendMenu(hMenu, MF_SEPARATOR, new UIntPtr(0), string.Empty);
+        NativeMethods.AppendMenu(hMenu, MF_STRING | (hasPlayer ? 0u : MF_GRAYED), new UIntPtr(2003), "Next Audio Track (S)");
+
+        // ── Volume submenu ────────────────────────────────────────────────────
+        NativeMethods.AppendMenu(hMenu, MF_SEPARATOR, new UIntPtr(0), string.Empty);
+        IntPtr hVolMenu = NativeMethods.CreatePopupMenu();
+        NativeMethods.AppendMenu(hVolMenu, MF_STRING, new UIntPtr(3001), "0%");
+        NativeMethods.AppendMenu(hVolMenu, MF_STRING, new UIntPtr(3002), "10%");
+        NativeMethods.AppendMenu(hVolMenu, MF_STRING, new UIntPtr(3003), "25%");
+        NativeMethods.AppendMenu(hVolMenu, MF_STRING, new UIntPtr(3004), "50%");
+        NativeMethods.AppendMenu(hVolMenu, MF_STRING, new UIntPtr(3005), "75%");
+        NativeMethods.AppendMenu(hVolMenu, MF_STRING, new UIntPtr(3006), "100%");
+        NativeMethods.AppendMenu(hVolMenu, MF_STRING, new UIntPtr(3007), "150%");
+        NativeMethods.AppendMenu(hVolMenu, MF_STRING, new UIntPtr(3008), "200%");
+        NativeMethods.AppendMenu(hMenu, MF_POPUP, (UIntPtr)(ulong)hVolMenu.ToInt64(), "Set Volume");
+        NativeMethods.AppendMenu(hMenu, MF_STRING, new UIntPtr(2004), _isMuted ? "Unmute Audio (M)" : "Mute Audio (M)");
+
+        // ── Subtitles ─────────────────────────────────────────────────────────
+        NativeMethods.AppendMenu(hMenu, MF_SEPARATOR, new UIntPtr(0), string.Empty);
+        NativeMethods.AppendMenu(hMenu, MF_STRING | (hasPlayer ? 0u : MF_GRAYED), new UIntPtr(2005), "Next Subtitles Track (T)");
+        NativeMethods.AppendMenu(hMenu, MF_STRING | (hasPlayer ? 0u : MF_GRAYED), new UIntPtr(2006), "Disable Subtitles");
 
         IntPtr hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        // VLC may have hidden the cursor over the video surface — restore it
+        // before the menu appears so it doesn't stay invisible during interaction.
+        NativeMethods.SetCursor(NativeMethods.LoadCursor(IntPtr.Zero, NativeMethods.IDC_ARROW));
         VideoHost.SuppressMouseHook = true;
         uint cmd = NativeMethods.TrackPopupMenu(
             hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenX, screenY, 0, hwnd, IntPtr.Zero);
         VideoHost.SuppressMouseHook = false;
-        NativeMethods.DestroyMenu(hMenu);
+        NativeMethods.DestroyMenu(hMenu); // recursively destroys hVolMenu too
 
         if      (cmd == 1001) ToggleFullScreen();
         else if (cmd == 1002) ToggleSidePanel();
+        else if (cmd == 1003 && hasUrl)
+        {
+            _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_currentUrl);
+            AppLogger.Log("Stream URL copied to clipboard.");
+        }
+        else if (cmd == 1005) ShowStreamInfo();
+        else if (cmd == 1007) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://liveonsat.com/2day.php") { UseShellExecute = true });
+        else if (cmd == 1004) ShowHelp();
+        else if (cmd == 2001) NextAspectRatio();
+        else if (cmd == 2002) ResetAspectRatio();
+        else if (cmd == 2003) NextAudioTrack();
+        else if (cmd >= 3001 && cmd <= 3008)
+        {
+            int[] vols = { 0, 10, 25, 50, 75, 100, 150, 200 };
+            SetVolumeTo(vols[cmd - 3001]);
+        }
+        else if (cmd == 2004) ToggleMute();
+        else if (cmd == 2005) NextSubtitleTrack();
+        else if (cmd == 2006) DisableSubtitles();
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
 
+    private async Task ConfirmCloseWithRecordingAsync()
+    {
+        string msg;
+        if (_isRecording && _recScheduleTimer is not null)
+            msg = T(
+                "A recording is in progress and another is scheduled.\n\nExiting will stop the current recording (the file may be incomplete) and cancel the scheduled one.\n\nExit anyway?",
+                "Hay una grabaci\u00f3n en curso y otra programada.\n\nSalir detendr\u00e1 la grabaci\u00f3n actual (el archivo puede quedar incompleto) y cancelar\u00e1 la programada.\n\n\u00bfSalir de todas formas?");
+        else if (_isRecording)
+            msg = T(
+                "Recording in progress. Exiting will stop the recording and the file may be incomplete.\n\nExit anyway?",
+                "Grabaci\u00f3n en curso. Salir detendr\u00e1 la grabaci\u00f3n y el archivo puede quedar incompleto.\n\n\u00bfSalir de todas formas?");
+        else
+            msg = T(
+                "A recording is scheduled. Exiting will cancel it.\n\nExit anyway?",
+                "Hay una grabaci\u00f3n programada. Salir la cancelar\u00e1.\n\n\u00bfSalir de todas formas?");
+
+        bool confirmed = false;
+        var dlg = new Window
+        {
+            Title                 = T("Exit", "Salir"),
+            Width                 = 400,
+            SizeToContent         = SizeToContent.Height,
+            CanResize             = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Padding               = new Thickness(16, 14),
+        };
+        var yesBtn = new Button { Content = T("Exit", "Salir"),      HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 4, 0) };
+        var noBtn  = new Button { Content = T("Cancel", "Cancelar"), HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(4, 0, 0, 0) };
+        yesBtn.Click += (_, _) => { confirmed = true; dlg.Close(); };
+        noBtn.Click  += (_, _) => dlg.Close();
+        var btnRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), Margin = new Thickness(0, 14, 0, 0) };
+        Grid.SetColumn(yesBtn, 0);
+        Grid.SetColumn(noBtn,  1);
+        btnRow.Children.Add(yesBtn);
+        btnRow.Children.Add(noBtn);
+        var root = new StackPanel();
+        root.Children.Add(new TextBlock
+        {
+            Text         = msg,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+        });
+        root.Children.Add(btnRow);
+        dlg.Content = root;
+        await dlg.ShowDialog(this);
+        if (!confirmed) return;
+        _confirmingClose = true;
+        Close();
+    }
+
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
+        if (!_confirmingClose && (_isRecording || _recScheduleTimer is not null))
+        {
+            e.Cancel = true;
+            _ = ConfirmCloseWithRecordingAsync();
+            return;
+        }
+
         if (_mediaPlayer is not null)
         {
             _mediaPlayer.EndReached      -= OnEndReached;

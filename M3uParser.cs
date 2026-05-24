@@ -26,10 +26,10 @@ public sealed record ParseResult(
 /// </summary>
 public static class M3uParser
 {
-    public static Task<ParseResult> ParseAsync(Stream stream) =>
-        Task.Run(() => ParseSync(stream));
+    public static Task<ParseResult> ParseAsync(Stream stream, bool removeDuplicates = false) =>
+        Task.Run(() => ParseSync(stream, removeDuplicates));
 
-    private static ParseResult ParseSync(Stream stream)
+    private static ParseResult ParseSync(Stream stream, bool removeDuplicates)
     {
         int capacity = stream.CanSeek
             ? (int)Math.Min(stream.Length / 80L, 50_000L)
@@ -37,6 +37,8 @@ public static class M3uParser
         var channels = new List<Channel>(capacity);
         var groups   = new Dictionary<string, List<Channel>>(
                            StringComparer.OrdinalIgnoreCase);
+        var seenUrls = removeDuplicates
+            ? new HashSet<string>(capacity, StringComparer.Ordinal) : null;
 
         using var reader = new StreamReader(stream, bufferSize: 65536, leaveOpen: true);
 
@@ -58,6 +60,12 @@ public static class M3uParser
                 string logo     = ExtractAttribute(extinf.AsSpan(), "tvg-logo");
 
                 var channel = new Channel(name, line.Trim(), rawGroup, logo);
+                // Skip duplicate URLs in O(1) using the pre-allocated HashSet.
+                if (seenUrls is not null && !seenUrls.Add(channel.Url))
+                {
+                    extinf = null;
+                    continue;
+                }
                 channels.Add(channel);
 
                 // Split by ';' to support multiple group memberships.

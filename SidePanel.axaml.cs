@@ -12,6 +12,16 @@ public partial class SidePanel : UserControl
 {
     private List<Channel> _allChannels = new();
     private Dictionary<string, List<Channel>> _groupedChannels = new();
+    private Dictionary<string, int> _playCounts = new();
+    private List<Channel> _favouriteChannels = new();
+
+    /// <summary>Sentinel URL used by the "Clear Favourites" pseudo-channel.</summary>
+    public const string ClearFavsUrl = "__CLEAR_FAVOURITES__";
+
+    public event Action<Channel>? ChannelSelected;
+    public event Action?          PanelCloseRequested;
+    public event Action?          ClearFavouritesRequested;
+    public event Action<string>?  GroupSelectionChanged;
 
     // Cache VMs so logos don't reload on every keystroke filter.
     private readonly Dictionary<string, ChannelVm> _vmCache = new();
@@ -19,9 +29,8 @@ public partial class SidePanel : UserControl
     // True while the group dropdown was opened by keyboard (Up-arrow from channel list).
     // Lets DropDownClosed know it should return focus to the channel list.
     private bool _groupDropDownOpenedByKeyboard;
-
-    public event Action<Channel>? ChannelSelected;
-    public event Action? PanelCloseRequested;
+    // True while we're rebuilding the group combo — suppresses OnGroupChanged → ApplyFilter.
+    private bool _updatingGroups;
 
     public SidePanel()
     {
@@ -44,20 +53,86 @@ public partial class SidePanel : UserControl
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    public void LoadChannels(ParseResult result)
+    public void LoadChannels(ParseResult result, Dictionary<string, int>? playCounts = null)
     {
-        _allChannels    = result.Channels;
+        _allChannels     = result.Channels;
         _groupedChannels = result.Groups;
+        _playCounts      = playCounts ?? new Dictionary<string, int>();
         _vmCache.Clear();
+        _favouriteChannels = BuildFavourites();
 
-        var groupNames = result.Groups.Keys
+        _updatingGroups = true;
+        try { RebuildGroupCombo(); }
+        finally { _updatingGroups = false; }
+
+        ApplyFilter();
+    }
+
+    public void UpdatePlayCounts(Dictionary<string, int> playCounts)
+    {
+        _playCounts = playCounts;
+        _favouriteChannels = BuildFavourites();
+
+        var current = GroupCombo.SelectedItem as string;
+        _updatingGroups = true;
+        try
+        {
+            RebuildGroupCombo();
+            if (current is not null &&
+                (GroupCombo.ItemsSource as IEnumerable<string>)?.Contains(current) == true)
+                GroupCombo.SelectedItem = current;
+        }
+        finally { _updatingGroups = false; }
+
+        ApplyFilter();
+    }
+
+    private List<Channel> BuildFavourites()
+    {
+        if (_playCounts.Count == 0) return new List<Channel>();
+        var favs = _allChannels
+            .Select(c => (channel: c, id: PlaylistService.GetChannelId(c.Url)))
+            .Where(x => _playCounts.TryGetValue(x.id, out var cnt) && cnt > 0)
+            .OrderByDescending(x => _playCounts.GetValueOrDefault(x.id))
+            .Select(x => x.channel)
+            .ToList();
+        favs.Add(new Channel("✕  Clear Favourites", ClearFavsUrl, string.Empty, string.Empty));
+        return favs;
+    }
+
+    private void InvokeChannel(ChannelVm? vm)
+    {
+        if (vm is null) return;
+        if (vm.Url == ClearFavsUrl)
+            ClearFavouritesRequested?.Invoke();
+        else
+            ChannelSelected?.Invoke(vm.Channel);
+    }
+
+    private void RebuildGroupCombo()
+    {
+        var groupNames = _groupedChannels.Keys
             .OrderBy(g => g, StringComparer.CurrentCulture)
             .ToList();
-
         groupNames.Insert(0, "ALL CHANNELS");
+        if (_favouriteChannels.Count > 0)
+            groupNames.Insert(0, "FAVOURITES (MOST VIEWED)");
         GroupCombo.ItemsSource   = groupNames;
         GroupCombo.SelectedIndex = 0;
+    }
 
+    /// <summary>Tries to select <paramref name="groupName"/> in the group combo.
+    /// Falls back silently if the group does not exist in the current playlist.</summary>
+    public void TrySelectGroup(string groupName)
+    {
+        if (string.IsNullOrEmpty(groupName)) return;
+        var items = GroupCombo.ItemsSource as IEnumerable<string>;
+        if (items is null) return;
+        var match = items.FirstOrDefault(g => g == groupName);
+        if (match is null) return;
+        _updatingGroups = true;
+        try { GroupCombo.SelectedItem = match; }
+        finally { _updatingGroups = false; }
         ApplyFilter();
     }
 
@@ -70,12 +145,16 @@ public partial class SidePanel : UserControl
         var search = (SearchBox.Text ?? string.Empty).Trim();
         var group  = GroupCombo.SelectedItem as string ?? "ALL CHANNELS";
 
-        IEnumerable<Channel> source = group == "ALL CHANNELS"
-            ? _allChannels
-            : _groupedChannels.TryGetValue(group, out var g) ? g : Array.Empty<Channel>();
+        IEnumerable<Channel> source = group switch
+        {
+            "FAVOURITES (MOST VIEWED)" => _favouriteChannels,
+            "ALL CHANNELS" => _allChannels,
+            _              => _groupedChannels.TryGetValue(group, out var g) ? g : Array.Empty<Channel>()
+        };
 
         if (!string.IsNullOrEmpty(search))
             source = source.Where(c =>
+                c.Url == ClearFavsUrl ||
                 c.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
 
         ChannelList.ItemsSource = source.Select(GetOrCreateVm).ToList();
@@ -95,12 +174,17 @@ public partial class SidePanel : UserControl
 
     private void OnSearchChanged(object? sender, TextChangedEventArgs e) => ApplyFilter();
 
-    private void OnGroupChanged(object? sender, SelectionChangedEventArgs e) => ApplyFilter();
+    private void OnGroupChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingGroups) return;
+        ApplyFilter();
+        if (GroupCombo.SelectedItem is string group)
+            GroupSelectionChanged?.Invoke(group);
+    }
 
     private void OnChannelDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (ChannelList.SelectedItem is ChannelVm vm)
-            ChannelSelected?.Invoke(vm.Channel);
+        InvokeChannel(ChannelList.SelectedItem as ChannelVm);
     }
 
     private void OnListKeyDown(object? sender, KeyEventArgs e)
@@ -108,8 +192,7 @@ public partial class SidePanel : UserControl
         switch (e.Key)
         {
             case Key.Enter:
-                if (ChannelList.SelectedItem is ChannelVm vm)
-                    ChannelSelected?.Invoke(vm.Channel);
+                InvokeChannel(ChannelList.SelectedItem as ChannelVm);
                 e.Handled = true;
                 break;
             case Key.Up:

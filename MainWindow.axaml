@@ -16,8 +16,8 @@
             <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Padding" Value="8,5" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="Button:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppButtonHoverBg}" />
@@ -32,8 +32,8 @@
             <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Padding" Value="8,5" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="ToggleButton:checked /template/ ContentPresenter">
             <Setter Property="Background" Value="#1976D2" />
@@ -58,7 +58,7 @@
 
         <!-- Controls bar -->
         <Border x:Name="ControlsBar" Grid.Row="1" Background="{DynamicResource AppBarBg}" Padding="8,6">
-            <StackPanel Orientation="Horizontal" Spacing="8"
+            <StackPanel Orientation="Horizontal" Spacing="5"
                         HorizontalAlignment="Center" VerticalAlignment="Center">
 
                 <Button x:Name="ChannelsButton"
@@ -94,6 +94,16 @@
                         Content="&#x2600; Light"
                         ToolTip.Tip="Switch between Dark and Light mode"
                         Click="OnThemeToggled" />
+
+                <Button x:Name="HelpButton"
+                        Content="&#x2753; Help (H)"
+                        ToolTip.Tip="Keyboard shortcuts"
+                        Click="OnHelpClicked" />
+
+                <Button x:Name="LangButton"
+                        Content="EN"
+                        ToolTip.Tip="Switch language / Cambiar idioma"
+                        Click="OnLangClicked" />
 
             </StackPanel>
         </Border>
@@ -138,6 +148,60 @@
                            Foreground="White"
                            FontSize="15"
                            FontWeight="SemiBold" />
+            </Border>
+        </Popup>
+
+        <!-- Recording indicator: blinking red dot, always visible while recording. -->
+        <Popup x:Name="RecIndicatorPopup"
+               Grid.Row="0"
+               Placement="AnchorAndGravity"
+               PlacementAnchor="TopLeft"
+               PlacementGravity="BottomRight"
+               PlacementTarget="{Binding ElementName=VideoGrid}"
+               HorizontalOffset="12"
+               VerticalOffset="12"
+               IsLightDismissEnabled="False">
+            <Border Background="#BB101010"
+                    CornerRadius="5"
+                    Padding="8,5">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Border x:Name="RecDot"
+                            Width="11" Height="11" CornerRadius="6"
+                            Background="Red"
+                            VerticalAlignment="Center" />
+                    <TextBlock Text="REC"
+                               Foreground="Red"
+                               FontSize="13"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="RecDiskText"
+                               Foreground="#CCFFFFFF"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Margin="4,0,0,0" />
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- Stream info overlay: codec/resolution/audio info, auto-hides after 10 s or on click. -->
+        <Popup x:Name="StreamInfoPopup"
+               Grid.Row="0"
+               Placement="AnchorAndGravity"
+               PlacementAnchor="TopLeft"
+               PlacementGravity="BottomRight"
+               PlacementTarget="{Binding ElementName=VideoGrid}"
+               HorizontalOffset="40"
+               VerticalOffset="40"
+               IsLightDismissEnabled="False">
+            <Border Background="#DD101010"
+                    CornerRadius="8"
+                    Padding="18,12"
+                    PointerPressed="OnStreamInfoClick">
+                <TextBlock x:Name="StreamInfoText"
+                           Foreground="White"
+                           FontSize="13"
+                           FontFamily="Consolas"
+                           IsHitTestVisible="False" />
             </Border>
         </Popup>
 

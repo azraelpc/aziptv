@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 namespace AzIPTV;
@@ -38,13 +39,13 @@ public static class PlaylistService
         using (var src = await response.Content.ReadAsStreamAsync())
             await src.CopyToAsync(ms);
         ms.Position = 0;
-        return await M3uParser.ParseAsync(ms); // Task.Run inside; continuation on UI thread
+        return await M3uParser.ParseAsync(ms, LoadRemoveDuplicates()); // Task.Run inside; continuation on UI thread
     }
 
     public static async Task<ParseResult> LoadFromFileAsync(string path)
     {
         using var stream = File.OpenRead(path);
-        return await M3uParser.ParseAsync(stream); // Task.Run inside; continuation on UI thread
+        return await M3uParser.ParseAsync(stream, LoadRemoveDuplicates()); // Task.Run inside; continuation on UI thread
     }
 
     // ── Settings ─────────────────────────────────────────────────────────────
@@ -73,10 +74,69 @@ public static class PlaylistService
         return "Dark";
     }
 
+    /// <summary>Returns true (default) unless user.ini explicitly has RemoveDuplicateChannels=0.</summary>
+    public static bool LoadRemoveDuplicates()
+    {
+        if (!File.Exists(IniPath)) return true;
+        foreach (var line in File.ReadLines(IniPath))
+            if (TryGet(line, "RemoveDuplicateChannels=", out var v))
+                return v != "0";
+        return true; // absent → enabled by default
+    }
+
+    /// <summary>Returns the saved UI language ("en" or "es"). Defaults to "en".</summary>
+    public static string LoadLanguage()
+    {
+        if (!File.Exists(IniPath)) return "en";
+        foreach (var line in File.ReadLines(IniPath))
+            if (TryGet(line, "Language=", out var v) && v is "en" or "es")
+                return v!;
+        return "en";
+    }
+
+    /// <summary>Returns the last group the user selected, or empty string if never saved.</summary>
+    public static string LoadLastGroup()
+    {
+        if (!File.Exists(IniPath)) return string.Empty;
+        foreach (var line in File.ReadLines(IniPath))
+            if (TryGet(line, "LastGroup=", out var v))
+                return v ?? string.Empty;
+        return string.Empty;
+    }
+
     public static void SaveTheme(string theme)
     {
         var (pu, pf, ls) = LoadSettings();
         WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, LoadUrlHistory(), theme);
+    }
+
+    public static void SaveLanguage(string lang)
+    {
+        var (pu, pf, ls) = LoadSettings();
+        WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, LoadUrlHistory(), LoadTheme(), lang);
+    }
+
+    /// <summary>Returns the last recording folder, or empty string if never saved.</summary>
+    public static string LoadRecordingFolder()
+    {
+        if (!File.Exists(IniPath)) return string.Empty;
+        foreach (var line in File.ReadLines(IniPath))
+            if (TryGet(line, "RecordingFolder=", out var v))
+                return Decode(v) ?? string.Empty;
+        return string.Empty;
+    }
+
+    public static void SaveRecordingFolder(string folder)
+    {
+        var (pu, pf, ls) = LoadSettings();
+        WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty,
+                 LoadUrlHistory(), LoadTheme(), LoadLanguage(), LoadLastGroup(), folder);
+    }
+
+    public static void SaveLastGroup(string group)
+    {
+        var (pu, pf, ls) = LoadSettings();
+        WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, LoadUrlHistory(), LoadTheme(), LoadLanguage(), group);
     }
 
     public static void SaveSettings(string? playlistUrl, string? playlistFile,
@@ -97,11 +157,16 @@ public static class PlaylistService
 
     private static void WriteIni(string playlistUrl, string playlistFile,
                                   string lastStreamUrl, List<UrlHistoryEntry> history,
-                                  string theme = "Dark")
+                                  string theme = "Dark", string language = "",
+                                  string lastGroup = "", string recordingFolder = "")
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("[AzIPTV]");
         sb.AppendLine($"Theme={theme}");
+        sb.AppendLine($"RemoveDuplicateChannels={(LoadRemoveDuplicates() ? 1 : 0)}");
+        sb.AppendLine($"Language={(string.IsNullOrEmpty(language) ? LoadLanguage() : language)}");
+        sb.AppendLine($"LastGroup={(string.IsNullOrEmpty(lastGroup) ? LoadLastGroup() : lastGroup)}");
+        sb.AppendLine($"RecordingFolder={Encode(string.IsNullOrEmpty(recordingFolder) ? LoadRecordingFolder() : recordingFolder)}");
         sb.AppendLine($"PlaylistUrl={Encode(playlistUrl)}");
         sb.AppendLine($"PlaylistFile={Encode(playlistFile)}");
         sb.AppendLine($"LastStreamUrl={Encode(lastStreamUrl)}");
@@ -109,6 +174,19 @@ public static class PlaylistService
         {
             sb.AppendLine($"UrlHistoryUrl{i}={Encode(history[i].Url)}");
             sb.AppendLine($"UrlHistoryName{i}={Encode(history[i].Name)}");
+        }
+        // Preserve any non-[AzIPTV] sections (e.g. [Favs_…] play-count blocks).
+        if (File.Exists(IniPath))
+        {
+            bool inAzSection = false;
+            foreach (var rawLine in File.ReadLines(IniPath))
+            {
+                var t = rawLine.Trim();
+                if (t.StartsWith('['))
+                    inAzSection = t.Equals("[AzIPTV]", StringComparison.OrdinalIgnoreCase);
+                if (!inAzSection)
+                    sb.AppendLine(rawLine);
+            }
         }
         File.WriteAllText(IniPath, sb.ToString());
     }
@@ -210,6 +288,83 @@ public static class PlaylistService
         }
         var (pu, pf, ls) = LoadSettings();
         WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, history, LoadTheme());
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    // ── Play counts (Favourites) ──────────────────────────────────────────────
+
+    /// <summary>Opaque 16-hex-char identifier for a playlist URL or file path.
+    /// Derived from SHA-256 so credentials embedded in URLs are never stored.</summary>
+    public static string GetPlaylistId(string urlOrPath) => Hash16(urlOrPath);
+
+    /// <summary>Opaque 16-hex-char identifier for a channel URL.</summary>
+    public static string GetChannelId(string url) => Hash16(url);
+
+    private static string Hash16(string input)
+    {
+        var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(input ?? string.Empty));
+        return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
+    }
+
+    /// <summary>Returns channel-play counts for the given playlist from user.ini.
+    /// Returns an empty dictionary if the section does not exist yet.</summary>
+    public static Dictionary<string, int> LoadPlayCounts(string playlistId)
+    {
+        var result = new Dictionary<string, int>();
+        if (string.IsNullOrEmpty(playlistId) || !File.Exists(IniPath)) return result;
+        var section = $"[Favs_{playlistId}]";
+        bool inSection = false;
+        foreach (var rawLine in File.ReadLines(IniPath))
+        {
+            var t = rawLine.Trim();
+            if (t.StartsWith('['))
+            {
+                inSection = t.Equals(section, StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+            if (!inSection) continue;
+            var eq = t.IndexOf('=');
+            if (eq < 1) continue;
+            var key = t[..eq].Trim();
+            var raw = t[(eq + 1)..].Trim();
+            if (int.TryParse(raw, out var count) && count > 0)
+                result[key] = count;
+        }
+        return result;
+    }
+
+    /// <summary>Writes (or replaces) the [Favs_playlistId] section in user.ini
+    /// without touching any other section.</summary>
+    public static void SavePlayCounts(string playlistId, Dictionary<string, int> counts)
+    {
+        if (string.IsNullOrEmpty(playlistId)) return;
+        var sectionHeader = $"[Favs_{playlistId}]";
+        var lines = File.Exists(IniPath)
+            ? new List<string>(File.ReadAllLines(IniPath))
+            : new List<string>();
+        // Strip old section for this playlist.
+        int start = -1;
+        for (int i = 0; i < lines.Count; i++)
+            if (lines[i].Trim().Equals(sectionHeader, StringComparison.OrdinalIgnoreCase))
+            { start = i; break; }
+        if (start >= 0)
+        {
+            int end = start + 1;
+            while (end < lines.Count && !lines[end].TrimStart().StartsWith('['))
+                end++;
+            lines.RemoveRange(start, end - start);
+        }
+        // Append fresh section.
+        if (counts.Count > 0)
+        {
+            if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1]))
+                lines.Add(string.Empty);
+            lines.Add(sectionHeader);
+            foreach (var (key, val) in counts.OrderByDescending(kv => kv.Value))
+                lines.Add($"{key}={val}");
+        }
+        File.WriteAllLines(IniPath, lines);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
