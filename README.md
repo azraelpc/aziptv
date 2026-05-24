@@ -2,6 +2,8 @@
 
 A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.net/) (.NET 8) and [LibVLCSharp](https://code.videolan.org/videolan/LibVLCSharp).
 
+<img height="250" alt="{B39FA0CB-B849-4441-840A-59CC1E1F2DA0}" src="https://github.com/user-attachments/assets/e42066ad-4125-4410-bd4f-87fd2ee5c2d9" />
+
 ## Features
 
 - **M3U / M3U8 playlist support** — load from a URL or a local file
