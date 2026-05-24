@@ -85,6 +85,16 @@ Sensitive stream URLs (including any embedded credentials) are stored/encoded in
 
 All dependencies are restored automatically via NuGet on first build.
 
+## Todo
+
+- Favourites (most played channels - per list+group?).
+- Aspect ratio / Subtitles / Audio track keys.
+- Copy current channel url to clipboard.
+- EPG Helper (map Movistar or similar list's channels to m3u list channel (and proxy?).
+- When EPG Helper is ok, show EPG + codec and resolution info.
+- Time scheduler for recording (and maybe for poweroff).
+
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
