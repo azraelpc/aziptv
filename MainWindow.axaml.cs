@@ -131,7 +131,8 @@ public partial class MainWindow : Window
 
         // Strip WS_EX_TOPMOST from the Popup HWND each time it opens;
         // Avalonia forces all Popups to be system-topmost which we don't want.
-        SidePanelPopup.Opened += OnSidePanelPopupOpened;
+        SidePanelPopup.Opened    += OnSidePanelPopupOpened;
+        RecIndicatorPopup.Opened += OnRecIndicatorPopupOpened;
 
         // Wire seek bar pointer events so drag doesn't fight the position timer.
         // Use AddHandler with handledEventsToo:true because Avalonia's Slider marks
@@ -989,6 +990,21 @@ public partial class MainWindow : Window
                     NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
         }
         catch (Exception ex) { AppLogger.LogException("SidePanelPopup.Opened", ex); }
+    }
+
+    private void OnRecIndicatorPopupOpened(object? sender, EventArgs e)
+    {
+        // Same fix: strip WS_EX_TOPMOST so the REC overlay does not float above
+        // other applications when Always-on-Top is not enabled.
+        try
+        {
+            var hwnd = TopLevel.GetTopLevel(RecDot)?.TryGetPlatformHandle()?.Handle;
+            if (hwnd.HasValue && hwnd.Value != IntPtr.Zero)
+                NativeMethods.SetWindowPos(hwnd.Value, NativeMethods.HWND_NOTOPMOST,
+                    0, 0, 0, 0,
+                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+        }
+        catch (Exception ex) { AppLogger.LogException("RecIndicatorPopup.Opened", ex); }
     }
     private void OnVideoSingleTapped()
     {
