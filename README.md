@@ -2,7 +2,8 @@
 
 A lightweight Windows IPTV player built with [Avalonia UI](https://avaloniaui.net/) (.NET 8) and [LibVLCSharp](https://code.videolan.org/videolan/LibVLCSharp).
 
-<img height="250" alt="{B39FA0CB-B849-4441-840A-59CC1E1F2DA0}" src="https://github.com/user-attachments/assets/e42066ad-4125-4410-bd4f-87fd2ee5c2d9" />
+<img height="250" alt="{B39FA0CB-B849-4441-840A-59CC1E1F2DA0}" src="https://github.com/user-attachments/assets/e42066ad-4125-4410-bd4f-87fd2ee5c2d9" /> <img height="250" alt="{8B29ECDB-8A2E-4E3E-8407-6F8DC7262AE4}" src="https://github.com/user-attachments/assets/1eb68f16-e9ef-4f6c-804c-7b4c2afa3083" />
+
 
 ## Features
 
