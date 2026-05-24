@@ -61,7 +61,7 @@ public partial class MainWindow : Window
     private bool             _seekBarDragging;
 
     private static readonly string?[] AspectRatios =
-        { null, "1:1", "4:3", "16:9", "16:10", "2.21:1", "2.35:1", "2.39:1", "5:4" };
+        { null, "1:1", "4:3", "16:9", "20:9", "16:10", "2.21:1", "2.35:1", "2.39:1", "5:4" };
     private int _aspectRatioIndex = 0;
 
     // UI language ("en" or "es") + inline translation helper.
@@ -507,14 +507,19 @@ public partial class MainWindow : Window
                 _titleUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
                 _titleUpdateTimer.Tick += (_, _) => { _titleUpdateTimer!.Stop(); _titleUpdateTimer = null; UpdateTitle(); };
                 _titleUpdateTimer.Start();
-                // Increment play count for user-initiated channel selections.
-                if (_pendingFavouriteChannel is Channel fav && !string.IsNullOrEmpty(_currentPlaylistId))
+                // Increment play count for user-initiated channel selections (live streams only).
+                if (_pendingFavouriteChannel is Channel fav && !string.IsNullOrEmpty(_currentPlaylistId)
+                    && _mediaPlayer?.IsSeekable != true)
                 {
                     _pendingFavouriteChannel = null;
                     var id = PlaylistService.GetChannelId(fav.Url);
                     _playCounts[id] = _playCounts.TryGetValue(id, out var cnt) ? cnt + 1 : 1;
                     PlaylistService.SavePlayCounts(_currentPlaylistId, _playCounts);
                     SidePanel.UpdatePlayCounts(_playCounts);
+                }
+                else if (_mediaPlayer?.IsSeekable == true)
+                {
+                    _pendingFavouriteChannel = null; // VOD — don't count
                 }
             }
             catch (Exception ex) { AppLogger.LogException("OnVlcPlaying", ex); }
@@ -1310,7 +1315,8 @@ public partial class MainWindow : Window
         if (_mediaPlayer is null) return;
         _aspectRatioIndex = (_aspectRatioIndex + 1) % AspectRatios.Length;
         var ratio = AspectRatios[_aspectRatioIndex];
-        _mediaPlayer.AspectRatio = ratio;
+        _mediaPlayer.CropGeometry = null;
+        _mediaPlayer.AspectRatio  = ratio;
         ShowActionFeedback(T("Aspect ratio: " + (ratio ?? "Default"), "Proporci\u00f3n: " + (ratio ?? "Defecto")));
     }
 
@@ -1318,7 +1324,8 @@ public partial class MainWindow : Window
     {
         if (_mediaPlayer is null) return;
         _aspectRatioIndex = 0;
-        _mediaPlayer.AspectRatio = null;
+        _mediaPlayer.CropGeometry = null;
+        _mediaPlayer.AspectRatio  = null;
         ShowActionFeedback(T("Aspect ratio: Default", "Proporción: Defecto"));
     }
 
