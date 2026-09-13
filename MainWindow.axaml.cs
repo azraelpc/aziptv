@@ -3,9 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -18,12 +21,26 @@ namespace AzIPTV;
 
 public partial class MainWindow : Window
 {
+    private const string ProjectWebsiteUrl = "https://github.com/azraelpc/aziptv/";
+    private const string ProjectReleasesUrl = "https://github.com/azraelpc/aziptv/releases";
+    private static readonly HttpClient UpdateHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
+
     private string _currentUrl = string.Empty;
     private string _currentChannelName = string.Empty;
-    private string _currentListTitle = "AzIPTV";
+    private Channel? _currentChannel;
+    private string _currentListTitle = Program.AppDisplayName;
     private string _currentPlaylistId = string.Empty;
+    private string? _loadingPlaylistTitle;
+    private string? _loadingProgressText;
+    private string _lastStatusMessage = "Ready";
     private System.Collections.Generic.Dictionary<string, int> _playCounts = new();
     private Channel? _pendingFavouriteChannel;
+    private bool _isPlaylistLoading;
+    private bool _updateAvailable;
+    private bool _playbackEngineInitialized;
+    private bool _initialPlaybackAttempted;
+    private bool _startupAutoOpenedSidePanel;
+    private HelpDialog? _helpDialog;
 
     // Circuit-breaker: pause playback after 10 consecutive failures within 30 s.
     private int      _consecutiveFails;
@@ -52,7 +69,9 @@ public partial class MainWindow : Window
     private int              _volume  = 100;
     private bool             _isMuted = false;
     private DispatcherTimer? _volumeOverlayTimer;
+    private DispatcherTimer? _nowPlayingTimer;
     private DispatcherTimer? _titleUpdateTimer;
+    private int              _nowPlayingRequestId;
 
     // VOD seek bar (additive Netflix model)
     private DispatcherTimer? _positionTimer;
@@ -74,48 +93,30 @@ public partial class MainWindow : Window
         // HwndCreated can start playback the moment the VLC surface is ready.
         var (_, _, lastStreamUrl) = PlaylistService.LoadSettings();
         _currentUrl = lastStreamUrl ?? string.Empty;
+        _currentChannelName = PlaylistService.LoadLastChannelName();
+        var lastChannelLogoUrl = PlaylistService.LoadLastChannelLogoUrl();
+        if (!string.IsNullOrEmpty(_currentUrl))
+        {
+            var restoredName = string.IsNullOrWhiteSpace(_currentChannelName)
+                ? UrlForDisplay(_currentUrl)
+                : _currentChannelName;
+            _currentChannel = new Channel(restoredName, _currentUrl, string.Empty, lastChannelLogoUrl);
+        }
         var savedFolder = PlaylistService.LoadRecordingFolder();
         _recordingFolder = (!string.IsNullOrEmpty(savedFolder) && Directory.Exists(savedFolder))
             ? savedFolder
             : Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
 
         InitializeComponent();
+        Title = Program.AppDisplayName;
 
         // Avalonia's Win32 platform is now initialised — safe to use Dispatcher.UIThread.
         AppLogger.MarkUiReady();
 
         // Wire status bar to logger — logger already marshals to UI thread.
-        AppLogger.MessageLogged += msg => StatusText.Text = msg;
+        AppLogger.MessageLogged += OnLoggerMessage;
 
-        try
-        {
-            _libVlc = new LibVLC("--http-user-agent=VLC", "--network-caching=2000");
-            _mediaPlayer = new MediaPlayer(_libVlc);
-        }
-        catch (Exception ex)
-        {
-            AppLogger.LogException("LibVLC init", ex);
-            return;
-        }
-
-        _mediaPlayer.EndReached      += OnEndReached;
-        _mediaPlayer.EncounteredError += OnPlaybackError;
-        _mediaPlayer.Buffering        += OnBuffering;
-        _mediaPlayer.Playing          += OnVlcPlaying;
-        _mediaPlayer.Stopped          += OnVlcStopped;
-        _mediaPlayer.Paused           += OnVlcPaused;
-        _mediaPlayer.LengthChanged    += OnVlcLengthChanged;
-
-        VideoHost.HwndCreated += hwnd =>
-        {
-            AppLogger.Log("Video surface ready");
-            _mediaPlayer.Hwnd = hwnd;
-            if (!string.IsNullOrEmpty(_currentUrl))
-            {
-                AppLogger.Log($"Resuming last stream…");
-                PlayStream();
-            }
-        };
+        VideoHost.HwndCreated += OnVideoHostCreated;
 
         VideoHost.VideoDoubleTapped   += ToggleFullScreen;
         VideoHost.VideoSingleTapped   += OnVideoSingleTapped;
@@ -157,7 +158,9 @@ public partial class MainWindow : Window
             _uiLang = PlaylistService.LoadLanguage();
             ApplySavedTheme();
             ApplyLanguage();
+            Dispatcher.UIThread.Post(EnsurePlaybackEngineInitialized, DispatcherPriority.Background);
             _ = LoadPlaylistOnStartupAsync();
+            _ = CheckForUpdatesAsync();
         };
 
         // Keep SidePanel height in sync when the window is resized.
@@ -174,6 +177,51 @@ public partial class MainWindow : Window
     {
         var theme = PlaylistService.LoadTheme();
         SetTheme(theme);
+    }
+
+    private void OnVideoHostCreated(IntPtr hwnd)
+    {
+        AppLogger.Log(T("Video surface ready", "Superficie de video lista"));
+        if (_mediaPlayer is not null)
+            _mediaPlayer.Hwnd = hwnd;
+        TryResumeInitialStream();
+    }
+
+    private void EnsurePlaybackEngineInitialized()
+    {
+        if (_playbackEngineInitialized) return;
+        try
+        {
+            _libVlc = new LibVLC("--http-user-agent=VLC", "--network-caching=2000");
+            _mediaPlayer = new MediaPlayer(_libVlc);
+            _mediaPlayer.EndReached       += OnEndReached;
+            _mediaPlayer.EncounteredError += OnPlaybackError;
+            _mediaPlayer.Buffering        += OnBuffering;
+            _mediaPlayer.Playing          += OnVlcPlaying;
+            _mediaPlayer.Stopped          += OnVlcStopped;
+            _mediaPlayer.Paused           += OnVlcPaused;
+            _mediaPlayer.LengthChanged    += OnVlcLengthChanged;
+            _playbackEngineInitialized = true;
+
+            if (VideoHost.Hwnd != IntPtr.Zero)
+                _mediaPlayer.Hwnd = VideoHost.Hwnd;
+
+            TryResumeInitialStream();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogException("LibVLC init", ex);
+        }
+    }
+
+    private void TryResumeInitialStream()
+    {
+        if (_initialPlaybackAttempted || _mediaPlayer is null || VideoHost.Hwnd == IntPtr.Zero || string.IsNullOrEmpty(_currentUrl))
+            return;
+
+        _initialPlaybackAttempted = true;
+        AppLogger.Log(T("Resuming last stream...", "Reanudando ultimo stream..."));
+        PlayStream();
     }
 
     private void SetTheme(string theme)
@@ -216,6 +264,7 @@ public partial class MainWindow : Window
             PinButton.Content        = T("📌 On Top",         "📌 Encima");
             HelpButton.Content       = T("❓ Help (H)",        "❓ Ayuda (H)");
             LangButton.Content       = _uiLang == "en" ? "EN" : "ES";
+            RefreshWebButton();
             PlayButton.Content = _mediaPlayer?.IsPlaying == true
                 ? T("\u23F8  Pause (P)",  "\u23F8  Pausa (P)")
                 : (_mediaPlayer?.State == VLCState.Paused && _mediaPlayer?.IsSeekable == true)
@@ -226,18 +275,40 @@ public partial class MainWindow : Window
             else if (_recScheduleTimer == null)
                 RecButton.Content = T("⏺ REC (R)", "⏺ REC (R)");
             // else: keep the ⏳ scheduled text intact
+
+            RefreshStatusText();
+            SidePanel.SetLoadingState(_isPlaylistLoading, BuildLoadingChannelsMessage(_loadingPlaylistTitle));
         }
         catch (Exception ex) { AppLogger.LogException("ApplyLanguage", ex); }
     }
 
     // ── Help ──────────────────────────────────────────────────────────────
 
-    private void OnHelpClicked(object? sender, RoutedEventArgs e) => ShowHelp();
+    private void OnHelpClicked(object? sender, RoutedEventArgs e) => ToggleHelp();
 
-    private void ShowHelp()
+    private void OnWebClicked(object? sender, RoutedEventArgs e)
     {
-        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(ShowHelp); return; }
+        var url = _updateAvailable ? ProjectReleasesUrl : ProjectWebsiteUrl;
+        _ = Task.Run(() => OpenExternalUrl(url));
+    }
+
+    private void ToggleHelp()
+    {
+        if (!Dispatcher.UIThread.CheckAccess()) { Dispatcher.UIThread.Post(ToggleHelp); return; }
+
+        if (_helpDialog is not null)
+        {
+            _helpDialog.Close();
+            return;
+        }
+
         var dlg = new HelpDialog(_uiLang);
+        _helpDialog = dlg;
+        dlg.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_helpDialog, dlg))
+                _helpDialog = null;
+        };
         _ = dlg.ShowDialog(this);
     }
 
@@ -251,51 +322,221 @@ public partial class MainWindow : Window
         {
             _currentPlaylistId = PlaylistService.GetPlaylistId(playlistUrl);
             _playCounts = PlaylistService.LoadPlayCounts(_currentPlaylistId);
-            AppLogger.Log($"Loading playlist from URL…");
-            SetLoadingState(true);
+            var listTitle = ResolveUrlListName(playlistUrl);
+            AppLogger.Log(BuildLoadingPlaylistMessage(listTitle));
+            SetLoadingState(true, listTitle);
             try
             {
-                var result = await PlaylistService.LoadFromUrlAsync(playlistUrl);
-                AppLogger.Log($"Playlist loaded: {result.Channels.Count} channels");
-                AfterPlaylistLoaded(result, playFirst: false, listTitle: ResolveUrlListName(playlistUrl));
+                var totalSw = Stopwatch.StartNew();
+                var progress = new Progress<ParseProgressUpdate>(u => OnPlaylistLoadProgress(listTitle, u));
+                var result = await PlaylistService.LoadFromUrlAsync(playlistUrl, progress);
+                AfterPlaylistLoaded(
+                    result,
+                    playFirst: false,
+                    listTitle: listTitle,
+                    showSidePanel: ShouldShowSidePanelForStartupLoad());
+                totalSw.Stop();
+                AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
             }
-            catch (Exception ex) { AppLogger.LogException("startup playlist URL", ex); }
+            catch (Exception ex) { AppLogger.Log(BuildPlaylistDownloadErrorMessage(ex, listTitle)); }
             finally { SetLoadingState(false); }
         }
         else if (!string.IsNullOrEmpty(playlistFile))
         {
             _currentPlaylistId = PlaylistService.GetPlaylistId(playlistFile);
             _playCounts = PlaylistService.LoadPlayCounts(_currentPlaylistId);
-            AppLogger.Log($"Loading playlist from file: {System.IO.Path.GetFileName(playlistFile)}");
-            SetLoadingState(true);
+            var listTitle = Path.GetFileNameWithoutExtension(playlistFile);
+            AppLogger.Log(BuildLoadingPlaylistMessage(listTitle));
+            SetLoadingState(true, listTitle);
             try
             {
-                var result = await PlaylistService.LoadFromFileAsync(playlistFile);
-                AppLogger.Log($"Playlist loaded: {result.Channels.Count} channels");
-                AfterPlaylistLoaded(result, playFirst: false, listTitle: Path.GetFileNameWithoutExtension(playlistFile));
+                var totalSw = Stopwatch.StartNew();
+                var progress = new Progress<ParseProgressUpdate>(u => OnPlaylistLoadProgress(listTitle, u));
+                var result = await PlaylistService.LoadFromFileAsync(playlistFile, progress);
+                AfterPlaylistLoaded(
+                    result,
+                    playFirst: false,
+                    listTitle: listTitle,
+                    showSidePanel: ShouldShowSidePanelForStartupLoad());
+                totalSw.Stop();
+                AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
             }
             catch (Exception ex) { AppLogger.LogException("startup playlist file", ex); }
             finally { SetLoadingState(false); }
         }
         else
         {
-            AppLogger.Log("No saved playlist. Use \"Load from URL\" or \"Load from File\" to load channels.");
+            AppLogger.Log(T("No saved playlist. Use \"Load from URL\" or \"Load from File\" to load channels.",
+                            "No hay lista guardada. Usa \"Cargar URL\" o \"Cargar Archivo\" para cargar canales."));
         }
     }
 
-    private void SetLoadingState(bool loading)
+    private void SetLoadingState(bool loading, string? listTitle = null, string? progressText = null)
     {
         Dispatcher.UIThread.Post(() =>
         {
             try
             {
+                _isPlaylistLoading = loading;
+                _loadingPlaylistTitle = loading ? listTitle : null;
+                _loadingProgressText = loading ? progressText : null;
                 LoadUrlButton.IsEnabled  = !loading;
                 LoadFileButton.IsEnabled = !loading;
                 LoadUrlButton.Content    = loading ? T("⏳ Loading...", "⏳ Cargando...") : T("🌐 Load URL (U)", "🌐 URL (U)");
                 LoadFileButton.Content   = loading ? T("⏳ Loading...", "⏳ Cargando...") : T("📁 Load File (L)", "📁 Archivo (L)");
+                SidePanel.SetLoadingState(loading, BuildLoadingChannelsMessage(_loadingPlaylistTitle, _loadingProgressText));
+                RefreshStatusText();
             }
             catch (Exception ex) { AppLogger.LogException("SetLoadingState", ex); }
         });
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var html = await UpdateHttp.GetStringAsync(ProjectReleasesUrl);
+            var latest = ParseLatestReleaseVersion(html);
+            if (latest is null) return;
+
+            _updateAvailable = IsVersionHigher(latest, Program.AppVersion);
+            Dispatcher.UIThread.Post(RefreshWebButton);
+        }
+        catch
+        {
+            // Fail silently: keep the default WEB button when update detection is unavailable.
+        }
+    }
+
+    private void RefreshWebButton()
+    {
+        WebButton.Content = _updateAvailable ? "Update!" : "WEB";
+        ToolTip.SetTip(WebButton, _updateAvailable
+            ? T("Open releases page", "Abrir p\u00e1gina de versiones")
+            : T("Open project website", "Abrir web del proyecto"));
+    }
+
+    private static string? ParseLatestReleaseVersion(string html)
+    {
+        var match = Regex.Match(
+            html,
+            @"/azraelpc/aziptv/releases/tag/(?<version>v?\d+(?:\.\d+){1,3})",
+            RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups["version"].Value : null;
+    }
+
+    private static bool IsVersionHigher(string candidate, string current)
+    {
+        if (!TryParseVersion(candidate, out var candidateVersion)) return false;
+        if (!TryParseVersion(current, out var currentVersion)) return false;
+        return candidateVersion > currentVersion;
+    }
+
+    private static bool TryParseVersion(string raw, out Version version)
+    {
+        version = new Version();
+        var normalized = raw.Trim();
+        if (normalized.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized[1..];
+        return Version.TryParse(normalized, out version!);
+    }
+
+    private static void OpenExternalUrl(string url)
+    {
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+    }
+
+    private bool ShouldShowSidePanelForStartupLoad()
+    {
+        if (string.IsNullOrEmpty(_currentUrl))
+            return true;
+
+        return _mediaPlayer?.State switch
+        {
+            VLCState.Playing => false,
+            VLCState.Opening => false,
+            VLCState.Buffering => false,
+            _ => true,
+        };
+    }
+
+    private string BuildLoadingPlaylistMessage(string? listTitle)
+        => string.IsNullOrWhiteSpace(listTitle)
+            ? T("Loading playlist...", "Cargando lista...")
+            : T($"Loading playlist: {listTitle}...", $"Cargando lista: {listTitle}...");
+
+    private string BuildPlaylistDownloadErrorMessage(Exception ex, string? listTitle)
+    {
+        var target = string.IsNullOrWhiteSpace(listTitle)
+            ? T("playlist", "lista")
+            : T($"playlist {listTitle}", $"lista {listTitle}");
+        return T($"Error: Can't download {target}: {DescribeDownloadError(ex)}",
+                 $"Error: No se puede descargar {target}: {DescribeDownloadError(ex)}");
+    }
+
+    private string DescribeDownloadError(Exception ex)
+    {
+        if (ex is HttpRequestException { StatusCode: { } statusCode })
+            return $"Error {(int)statusCode}.";
+
+        if (ex is TaskCanceledException)
+            return T("Request timed out.", "La solicitud expiro.");
+
+        if (ex is HttpRequestException)
+            return T("Connection failed.", "Fallo de conexion.");
+
+        var message = (ex.Message ?? string.Empty)
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(message))
+            return T("Unknown error.", "Error desconocido.");
+
+        message = message.Trim();
+        return message.EndsWith('.') ? message : message + ".";
+    }
+
+    private string BuildLoadingChannelsMessage(string? listTitle, string? progressText = null)
+        => string.IsNullOrWhiteSpace(listTitle)
+            ? T($"Loading channels{progressText}...", $"Cargando canales{progressText}...")
+            : T($"Loading channels: {listTitle}{progressText}...", $"Cargando canales: {listTitle}{progressText}...");
+
+    private string BuildPlaylistLoadedSummary(int channelCount, string? listTitle, TimeSpan elapsed)
+    {
+        var seconds = Math.Max(0.1, elapsed.TotalSeconds);
+        return string.IsNullOrWhiteSpace(listTitle)
+            ? T($"Playlist loaded ({seconds:F1}s, {channelCount} channels).",
+                $"Lista cargada ({seconds:F1}s, {channelCount} canales).")
+            : T($"Playlist {listTitle} loaded ({seconds:F1}s, {channelCount} channels).",
+                $"Lista {listTitle} cargada ({seconds:F1}s, {channelCount} canales).") ;
+    }
+
+    private void OnLoggerMessage(string msg)
+    {
+        _lastStatusMessage = msg;
+        RefreshStatusText();
+    }
+
+    private void RefreshStatusText()
+    {
+        StatusText.Text = _isPlaylistLoading
+            ? BuildLoadingChannelsListMessage(_loadingPlaylistTitle, _loadingProgressText)
+            : _lastStatusMessage;
+    }
+
+    private string BuildLoadingChannelsListMessage(string? listTitle, string? progressText = null)
+        => string.IsNullOrWhiteSpace(listTitle)
+            ? T($"Loading channels list{progressText}...", $"Cargando lista de canales{progressText}...")
+            : T($"Loading channels list: {listTitle}{progressText}...", $"Cargando lista de canales: {listTitle}{progressText}...");
+
+    private void OnPlaylistLoadProgress(string? listTitle, ParseProgressUpdate update)
+    {
+        if (update.Fraction <= 0d) return;
+
+        var percent = (int)Math.Clamp(Math.Round(update.Fraction * 100.0), 0, 100);
+        var progressText = $" ({update.ParsedChannels} - {percent}%)";
+
+        SetLoadingState(true, listTitle, progressText);
     }
 
     // ── Playback ──────────────────────────────────────────────────────────────
@@ -311,7 +552,7 @@ public partial class MainWindow : Window
     {
         if (_libVlc is null || _mediaPlayer is null || string.IsNullOrEmpty(_currentUrl)) return;
         var label = string.IsNullOrEmpty(_currentChannelName) ? UrlForDisplay(_currentUrl) : _currentChannelName;
-        AppLogger.Log($"Playing: {label}");
+        AppLogger.Log(T($"Playing: {label}", $"Reproduciendo: {label}"));
         try
         {
             _media?.Dispose();
@@ -341,6 +582,9 @@ public partial class MainWindow : Window
         }
         _currentUrl = url;
         PlaylistService.SaveLastStreamUrl(url);
+        PlaylistService.SaveLastChannelName(_currentChannelName);
+        if (!string.IsNullOrWhiteSpace(_currentChannel?.LogoUrl))
+            PlaylistService.SaveLastChannelLogoUrl(_currentChannel.LogoUrl);
         // Reset failure counter when the user explicitly changes channel.
         _consecutiveFails = 0;
         PlayStream();
@@ -355,7 +599,7 @@ public partial class MainWindow : Window
             {
                 {
                     var label = string.IsNullOrEmpty(_currentChannelName) ? UrlForDisplay(_currentUrl) : _currentChannelName;
-                    AppLogger.Log($"Loop: restarting {label}");
+                    AppLogger.Log(T($"Loop: restarting {label}", $"Bucle: reiniciando {label}"));
                     PlayStream();
                 }
             }
@@ -381,7 +625,8 @@ public partial class MainWindow : Window
                 }
                 _consecutiveFails++;
 
-                AppLogger.Log($"Playback error ({_consecutiveFails}): {label}");
+                AppLogger.Log(T($"Playback error ({_consecutiveFails}): {label}",
+                                $"Error de reproduccion ({_consecutiveFails}): {label}"));
 
                 if (_consecutiveFails >= MaxConsecutiveFails)
                 {
@@ -389,11 +634,13 @@ public partial class MainWindow : Window
                     _firstFailTime    = DateTime.MinValue;
                     if (_isRecording)
                     {
-                        AppLogger.Log("Too many failures — retrying (recording active)…");
+                        AppLogger.Log(T("Too many failures - retrying (recording active)...",
+                                        "Demasiados fallos - reintentando (grabacion activa)..."));
                     }
                     else
                     {
-                        AppLogger.Log("Too many failures — playback paused.");
+                        AppLogger.Log(T("Too many failures - playback paused.",
+                                        "Demasiados fallos - reproduccion en pausa."));
                         _mediaPlayer?.Stop();
                         return;
                     }
@@ -401,7 +648,7 @@ public partial class MainWindow : Window
 
                 // Auto-retry after 500 ms.
                 {
-                    AppLogger.Log($"Retrying in 500 ms…");
+                    AppLogger.Log(T("Retrying in 500 ms...", "Reintentando en 500 ms..."));
                     var retryTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
                     retryTimer.Tick += (_, _) =>
                     {
@@ -426,7 +673,9 @@ public partial class MainWindow : Window
                 try
                 {
                     var label = string.IsNullOrEmpty(_currentChannelName) ? UrlForDisplay(_currentUrl) : _currentChannelName;
-                    var state = e.Cache == 0f ? "Buffering…" : "Buffering complete";
+                    var state = e.Cache == 0f
+                        ? T("Buffering...", "Buffering...")
+                        : T("Buffering complete", "Buffering completado");
                     AppLogger.Log($"{state}: {label}");
                 }
                 catch (Exception ex) { AppLogger.LogException("OnBuffering", ex); }
@@ -474,7 +723,8 @@ public partial class MainWindow : Window
 
     private void OnChannelSelected(Channel channel)
     {
-        AppLogger.Log($"Channel selected: {channel.Name}");
+        AppLogger.Log(T($"Channel selected: {channel.Name}", $"Canal seleccionado: {channel.Name}"));
+        _currentChannel = channel;
         _currentChannelName       = channel.Name;
         _pendingFavouriteChannel  = channel;
         UpdateTitle();
@@ -520,6 +770,14 @@ public partial class MainWindow : Window
                 else if (_mediaPlayer?.IsSeekable == true)
                 {
                     _pendingFavouriteChannel = null; // VOD — don't count
+                }
+
+                ShowNowPlayingOverlay();
+
+                if (_startupAutoOpenedSidePanel && SidePanelPopup.IsOpen)
+                {
+                    _startupAutoOpenedSidePanel = false;
+                    CloseSidePanel();
                 }
             }
             catch (Exception ex) { AppLogger.LogException("OnVlcPlaying", ex); }
@@ -619,7 +877,9 @@ public partial class MainWindow : Window
     private void OnPinToggled(object? sender, RoutedEventArgs e)
     {
         Topmost = PinButton.IsChecked == true;
-        AppLogger.Log(Topmost ? "Pinned — always on top" : "Unpinned");
+        AppLogger.Log(Topmost
+            ? T("Pinned - always on top", "Fijado - siempre encima")
+            : T("Unpinned", "Desfijado"));
     }
 
     private void OnSeekBackClicked(object? sender, RoutedEventArgs e)    => AccumulateSeek(-5_000);
@@ -703,7 +963,8 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrEmpty(_currentUrl))
         {
-            AppLogger.Log("No stream is playing — nothing to record.");
+            AppLogger.Log(T("No stream is playing - nothing to record.",
+                            "No hay ningun stream reproduciendose - nada para grabar."));
             return;
         }
 
@@ -724,12 +985,13 @@ public partial class MainWindow : Window
         _recordingPath = Path.Combine(_recordingFolder, filename);
         _isRecording   = true;
         RecButton.Content = T("⏹ STOP REC (R)", "⏹ STOP REC (R)");
-        AppLogger.Log($"Recording started: {filename}");
+        AppLogger.Log(T($"Recording started: {filename}", $"Grabacion iniciada: {filename}"));
         StartRecIndicator();
 
         if (duration.HasValue)
         {
-            AppLogger.Log($"Recording duration: {(int)duration.Value.TotalHours}h {duration.Value.Minutes:D2}min");
+            AppLogger.Log(T($"Recording duration: {(int)duration.Value.TotalHours}h {duration.Value.Minutes:D2}min",
+                            $"Duracion de grabacion: {(int)duration.Value.TotalHours}h {duration.Value.Minutes:D2}min"));
             _recDurationTimer = new DispatcherTimer { Interval = duration.Value };
             _recDurationTimer.Tick += (_, _) =>
             {
@@ -813,7 +1075,7 @@ public partial class MainWindow : Window
         _isRecording   = false;
         _recordingPath = null;
         RecButton.Content = T("⏺ REC (R)", "⏺ REC (R)");
-        AppLogger.Log("Recording stopped.");
+        AppLogger.Log(T("Recording stopped.", "Grabacion detenida."));
 
         // Restart without the sout chain.
         PlayStream();
@@ -860,43 +1122,39 @@ public partial class MainWindow : Window
         Title = title;
     }
 
+    private string GetCurrentPlaylistNameForInfo()
+    {
+        var prefix = Program.AppDisplayName + " — ";
+        return _currentListTitle.StartsWith(prefix, StringComparison.Ordinal)
+            ? _currentListTitle[prefix.Length..]
+            : string.Empty;
+    }
+
     private async void OnLoadFromUrlClicked(object? sender, RoutedEventArgs e)
     {
-        var (savedUrl, _, _) = PlaylistService.LoadSettings();
-        var dialog = new UrlInputDialog(savedUrl);
+        var dialog = new UrlInputDialog();
         var url = await dialog.ShowDialog<string?>(this);
         if (string.IsNullOrWhiteSpace(url)) return;
 
-        AppLogger.Log($"Downloading playlist from URL…");
-        SetLoadingState(true);
+        var listTitle = ResolveUrlListName(url);
+
+        AppLogger.Log(BuildLoadingPlaylistMessage(listTitle));
+        SetLoadingState(true, listTitle);
         try
         {
-            var result = await PlaylistService.LoadFromUrlAsync(url);
-            PlaylistService.SaveSettings(url, null);
-            AppLogger.Log($"Playlist loaded: {result.Channels.Count} channels");
-
-            // Ask for a name only for user-entered URLs (not fixed playlists).
-            bool isFixed = PlaylistService.FixedPlaylists
-                .Any(f => string.Equals(f.Url, url, StringComparison.OrdinalIgnoreCase));
-            if (!isFixed)
-            {
-                var existing = PlaylistService.LoadUrlHistory()
-                    .FirstOrDefault(e2 => string.Equals(e2.Url, url, StringComparison.OrdinalIgnoreCase));
-                var suggested = existing?.Name
-                    ?? $"List #{PlaylistService.LoadUrlHistory().Count + 1}";
-                var nameDialog = new PlaylistNameDialog(suggested);
-                var name = await nameDialog.ShowDialog<string?>(this);
-                // AddUrlToHistory deduplicates; UpdateUrlName persists the chosen name.
-                PlaylistService.AddUrlToHistory(url);
-                if (!string.IsNullOrWhiteSpace(name))
-                    PlaylistService.UpdateUrlName(url, name);
-            }
+            var totalSw = Stopwatch.StartNew();
+            var progress = new Progress<ParseProgressUpdate>(u => OnPlaylistLoadProgress(listTitle, u));
+            var result = await PlaylistService.LoadFromUrlAsync(url, progress);
+            PlaylistService.SaveSettings(url, string.Empty);
 
             _currentPlaylistId = PlaylistService.GetPlaylistId(url);
             _playCounts = PlaylistService.LoadPlayCounts(_currentPlaylistId);
-            AfterPlaylistLoaded(result, playFirst: true, listTitle: ResolveUrlListName(url));
+
+            AfterPlaylistLoaded(result, playFirst: true, listTitle: listTitle);
+            totalSw.Stop();
+            AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
         }
-        catch (Exception ex) { AppLogger.LogException("LoadFromUrl", ex); }
+        catch (Exception ex) { AppLogger.Log(BuildPlaylistDownloadErrorMessage(ex, listTitle)); }
         finally { SetLoadingState(false); }
     }
 
@@ -918,33 +1176,40 @@ public partial class MainWindow : Window
         var path = files[0].TryGetLocalPath();
         if (string.IsNullOrEmpty(path)) return;
 
-        AppLogger.Log($"Loading playlist from file: {System.IO.Path.GetFileName(path)}…");
-        SetLoadingState(true);
+        var listTitle = Path.GetFileNameWithoutExtension(path);
+
+        AppLogger.Log(BuildLoadingPlaylistMessage(listTitle));
+        SetLoadingState(true, listTitle);
         try
         {
-            var result = await PlaylistService.LoadFromFileAsync(path);
-            PlaylistService.SaveSettings(null, path);
-            AppLogger.Log($"Playlist loaded: {result.Channels.Count} channels");
+            var totalSw = Stopwatch.StartNew();
+            var progress = new Progress<ParseProgressUpdate>(u => OnPlaylistLoadProgress(listTitle, u));
+            var result = await PlaylistService.LoadFromFileAsync(path, progress);
+            PlaylistService.SaveSettings(string.Empty, path);
             _currentPlaylistId = PlaylistService.GetPlaylistId(path);
             _playCounts = PlaylistService.LoadPlayCounts(_currentPlaylistId);
-            AfterPlaylistLoaded(result, playFirst: true, listTitle: Path.GetFileNameWithoutExtension(path));
+
+            AfterPlaylistLoaded(result, playFirst: true, listTitle: listTitle);
+            totalSw.Stop();
+            AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
         }
         catch (Exception ex) { AppLogger.LogException("LoadFromFile", ex); }
         finally { SetLoadingState(false); }
     }
 
-    private void AfterPlaylistLoaded(ParseResult result, bool playFirst, string? listTitle = null)
+    private void AfterPlaylistLoaded(ParseResult result, bool playFirst, string? listTitle = null, bool showSidePanel = true)
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
             Dispatcher.UIThread.Post(() =>
             {
-                try { AfterPlaylistLoaded(result, playFirst, listTitle); }
+                try { AfterPlaylistLoaded(result, playFirst, listTitle, showSidePanel); }
                 catch (Exception ex) { AppLogger.LogException("AfterPlaylistLoaded", ex); }
             });
             return;
         }
-        _currentListTitle   = string.IsNullOrEmpty(listTitle) ? "AzIPTV" : $"AzIPTV — {listTitle}";
+        _currentListTitle   = string.IsNullOrEmpty(listTitle) ? Program.AppDisplayName : $"{Program.AppDisplayName} — {listTitle}";
+        _currentChannel = null;
         _currentChannelName = string.Empty;
 
         // On startup (playFirst=false) the last URL is already playing but the
@@ -954,16 +1219,25 @@ public partial class MainWindow : Window
             var match = result.Channels.FirstOrDefault(c =>
                 string.Equals(c.Url, _currentUrl, StringComparison.OrdinalIgnoreCase));
             if (match is not null)
+            {
+                _currentChannel = match;
                 _currentChannelName = match.Name;
+                PlaylistService.SaveLastChannelName(match.Name);
+            }
         }
 
         UpdateTitle();
         SidePanel.LoadChannels(result, _playCounts);
         SidePanel.TrySelectGroup(PlaylistService.LoadLastGroup());
-        OpenSidePanel();
+        _startupAutoOpenedSidePanel = !playFirst && showSidePanel;
+        if (showSidePanel)
+            OpenSidePanel();
         if (playFirst && result.Channels.Count > 0)
         {
-            AppLogger.Log($"Auto-playing first channel: {result.Channels[0].Name}");
+            AppLogger.Log(T($"Auto-playing first channel: {result.Channels[0].Name}",
+                            $"Reproduciendo automaticamente el primer canal: {result.Channels[0].Name}"));
+            _currentChannel = result.Channels[0];
+            _currentChannelName = result.Channels[0].Name;
             PlayChannelUrl(result.Channels[0].Url);
         }
     }
@@ -1087,11 +1361,17 @@ public partial class MainWindow : Window
             case 0x6D: // VK_SUBTRACT (numpad -)
                 AdjustVolume(-5);
                 break;
+            case 0x26: // VK_UP
+                if (CanUseArrowKeysForVolume()) AdjustVolume(5);
+                break;
+            case 0x28: // VK_DOWN
+                if (CanUseArrowKeysForVolume()) AdjustVolume(-5);
+                break;
             case 0x4D: // VK_M
                 if (!panelOpen) ToggleMute();
                 break;
             case 0x48: // VK_H
-                if (!panelOpen) ShowHelp();
+                if (!panelOpen) ToggleHelp();
                 break;
             case 0x41: // VK_A — aspect ratio
                 if (!panelOpen) NextAspectRatio();
@@ -1146,11 +1426,17 @@ public partial class MainWindow : Window
             case Key.Subtract: // numpad -
                 AdjustVolume(-5); e.Handled = true;
                 break;
+            case Key.Up:
+                if (CanUseArrowKeysForVolume()) { AdjustVolume(5); e.Handled = true; }
+                break;
+            case Key.Down:
+                if (CanUseArrowKeysForVolume()) { AdjustVolume(-5); e.Handled = true; }
+                break;
             case Key.M:
                 if (!panelOpen) { ToggleMute(); e.Handled = true; }
                 break;
             case Key.H:
-                if (!panelOpen) { ShowHelp(); e.Handled = true; }
+                if (!panelOpen) { ToggleHelp(); e.Handled = true; }
                 break;
             case Key.A:
                 if (!panelOpen) { NextAspectRatio(); e.Handled = true; }
@@ -1178,6 +1464,24 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool CanUseArrowKeysForVolume()
+    {
+        if (SidePanelPopup.IsOpen)
+            return false;
+
+        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+        return focused is null || !IsInteractiveControl(focused);
+    }
+
+    private static bool IsInteractiveControl(IInputElement focused)
+        => focused is TextBox
+        || focused is ComboBox
+        || focused is ListBox
+        || focused is ListBoxItem
+        || focused is Slider
+        || focused is Button
+        || focused is ToggleButton;
+
     // ── Volume ──────────────────────────────────────────────────────────────
 
     private void AdjustVolume(int delta)
@@ -1185,7 +1489,7 @@ public partial class MainWindow : Window
         if (_mediaPlayer is null) return;
         _volume = Math.Clamp(_volume + delta, 0, 200);
         _mediaPlayer.Volume = _volume;
-        AppLogger.Log($"Volume: {_volume}%");
+        AppLogger.Log(T($"Volume: {_volume}%", $"Volumen: {_volume}%"));
         ShowVolumeOverlay($"🔊 {_volume}%");
     }
 
@@ -1194,7 +1498,7 @@ public partial class MainWindow : Window
         if (_mediaPlayer is null) return;
         _isMuted = !_isMuted;
         _mediaPlayer.Mute = _isMuted;
-        AppLogger.Log(_isMuted ? "Muted" : "Unmuted");
+        AppLogger.Log(_isMuted ? T("Muted", "Silenciado") : T("Unmuted", "Con sonido"));
         ShowVolumeOverlay(_isMuted ? "🔇 Muted" : $"🔊 {_volume}%");
     }
 
@@ -1216,6 +1520,40 @@ public partial class MainWindow : Window
         _volumeOverlayTimer.Start();
     }
 
+    private async void ShowNowPlayingOverlay()
+    {
+        var channelName = string.IsNullOrWhiteSpace(_currentChannelName) ? UrlForDisplay(_currentUrl) : _currentChannelName;
+        if (string.IsNullOrWhiteSpace(channelName)) return;
+
+        var requestId = ++_nowPlayingRequestId;
+        NowPlayingText.Text = channelName;
+        NowPlayingLogo.Source = null;
+        NowPlayingLogoFallback.IsVisible = true;
+
+        if (!NowPlayingPopup.IsOpen)
+            NowPlayingPopup.Open();
+
+        _nowPlayingTimer?.Stop();
+        _nowPlayingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        _nowPlayingTimer.Tick += (_, _) =>
+        {
+            _nowPlayingTimer!.Stop();
+            _nowPlayingTimer = null;
+            NowPlayingPopup.Close();
+        };
+        _nowPlayingTimer.Start();
+
+        var logoUrl = _currentChannel?.LogoUrl;
+        if (string.IsNullOrWhiteSpace(logoUrl)) return;
+
+        var logo = await ChannelVm.LoadLogoImageAsync(logoUrl);
+        if (requestId == _nowPlayingRequestId && _currentChannel?.LogoUrl == logoUrl)
+        {
+            NowPlayingLogo.Source = logo;
+            NowPlayingLogoFallback.IsVisible = logo is null;
+        }
+    }
+
     /// <summary>Logs msg to the status bar and, when fullscreen, also shows it in the overlay popup.</summary>
     private void ShowActionFeedback(string msg)
     {
@@ -1226,10 +1564,14 @@ public partial class MainWindow : Window
     private void ShowStreamInfo()
     {
         if (_mediaPlayer is null) return;
+        ShowNowPlayingOverlay();
         var sb = new System.Text.StringBuilder();
 
         if (!string.IsNullOrEmpty(_currentChannelName))
             sb.AppendLine($"Channel : {_currentChannelName}");
+        var playlistName = GetCurrentPlaylistNameForInfo();
+        if (!string.IsNullOrEmpty(playlistName))
+            sb.AppendLine($"List    : {playlistName}");
         if (!string.IsNullOrEmpty(_currentUrl))
         {
             var url = _currentUrl.Length > 65 ? _currentUrl[..62] + "..." : _currentUrl;
@@ -1435,11 +1777,11 @@ public partial class MainWindow : Window
         else if (cmd == 1003 && hasUrl)
         {
             _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_currentUrl);
-            AppLogger.Log("Stream URL copied to clipboard.");
+            AppLogger.Log(T("Stream URL copied to clipboard.", "URL del stream copiada al portapapeles."));
         }
         else if (cmd == 1005) ShowStreamInfo();
         else if (cmd == 1007) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://liveonsat.com/2day.php") { UseShellExecute = true });
-        else if (cmd == 1004) ShowHelp();
+        else if (cmd == 1004) ToggleHelp();
         else if (cmd == 2001) NextAspectRatio();
         else if (cmd == 2002) ResetAspectRatio();
         else if (cmd == 2003) NextAudioTrack();

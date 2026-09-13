@@ -14,6 +14,8 @@ internal static class NativeSplash
     private static IntPtr           _hwnd;
     private static WndProcDelegate? _delegate; // keep alive so GC doesn't collect it
     private static float            _scale = 1f;
+    private static IntPtr           _largeIcon;
+    private static IntPtr           _smallIcon;
 
     private const string ClassName = "AzIPTVSplash";
     // Base dimensions at 96 DPI; scaled at runtime.
@@ -69,26 +71,32 @@ internal static class NativeSplash
         int x = (mi.rcWork.Right  + mi.rcWork.Left - w) / 2;
         int y = (mi.rcWork.Bottom + mi.rcWork.Top  - h) / 2;
 
+        LoadAppIcons();
+
         var wc = new WNDCLASSEX
         {
             cbSize        = (uint)Marshal.SizeOf<WNDCLASSEX>(),
             lpfnWndProc   = Marshal.GetFunctionPointerForDelegate(_delegate),
             hInstance     = hInst,
+            hIcon         = _largeIcon,
             hCursor       = LoadCursor(IntPtr.Zero, 32512), // IDC_ARROW
             hbrBackground = CreateSolidBrush(BG),
             lpszClassName = ClassName,
+            hIconSm       = _smallIcon,
         };
         RegisterClassEx(ref wc);
 
         _hwnd = CreateWindowEx(
-            0x00000088,                   // WS_EX_TOPMOST | WS_EX_TOOLWINDOW
-            ClassName, null,
+            0x00040008,                   // WS_EX_TOPMOST | WS_EX_APPWINDOW
+            ClassName, Program.AppDisplayName,
             unchecked((int)0x80000000),   // WS_POPUP
             x, y, w, h,
             IntPtr.Zero, IntPtr.Zero, hInst, IntPtr.Zero);
 
         if (_hwnd != IntPtr.Zero)
         {
+            SendMessage(_hwnd, WM_SETICON, (IntPtr)ICON_BIG, _largeIcon);
+            SendMessage(_hwnd, WM_SETICON, (IntPtr)ICON_SMALL, _smallIcon);
             ShowWindow(_hwnd, 5);  // SW_SHOW
             UpdateWindow(_hwnd);
         }
@@ -99,6 +107,28 @@ internal static class NativeSplash
         if (_hwnd == IntPtr.Zero) return;
         DestroyWindow(_hwnd);
         _hwnd = IntPtr.Zero;
+        ReleaseAppIcons();
+    }
+
+    private static void LoadAppIcons()
+    {
+        if (_largeIcon != IntPtr.Zero || _smallIcon != IntPtr.Zero) return;
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath)) return;
+
+        ExtractIconEx(exePath, 0, out _largeIcon, out _smallIcon, 1);
+        if (_smallIcon == IntPtr.Zero)
+            _smallIcon = _largeIcon;
+    }
+
+    private static void ReleaseAppIcons()
+    {
+        if (_smallIcon != IntPtr.Zero && _smallIcon != _largeIcon)
+            DestroyIcon(_smallIcon);
+        if (_largeIcon != IntPtr.Zero)
+            DestroyIcon(_largeIcon);
+        _largeIcon = IntPtr.Zero;
+        _smallIcon = IntPtr.Zero;
     }
 
     // ── Window procedure ──────────────────────────────────────────────────────
@@ -135,11 +165,11 @@ internal static class NativeSplash
                 var subFont   = CreateFont(-(int)(11 * _scale), 0, 0, 0, 400,
                     0, 0, 0, 1, 0, 0, 5, 0, "Segoe UI");
 
-                // Title "AzIPTV" — upper 60 % of the window
+                // Title "AzIPTV v1.1.0" — upper 60 % of the window
                 var oldFont = SelectObject(hdc, titleFont);
                 SetTextColor(hdc, FG);
                 var titleRc = new RECT { Left = 0, Top = (int)(10 * _scale), Right = rc.Right, Bottom = rc.Bottom * 6 / 10 };
-                DrawText(hdc, "AzIPTV", -1, ref titleRc, 0x0025); // DT_CENTER | DT_VCENTER | DT_SINGLELINE
+                DrawText(hdc, Program.AppDisplayName, -1, ref titleRc, 0x0025); // DT_CENTER | DT_VCENTER | DT_SINGLELINE
 
                 // Subtitle "Loading…" — lower 40 %
                 SelectObject(hdc, subFont);
@@ -160,6 +190,10 @@ internal static class NativeSplash
     }
 
     // ── P/Invoke ──────────────────────────────────────────────────────────────
+
+    private const int WM_SETICON = 0x0080;
+    private const int ICON_SMALL = 0;
+    private const int ICON_BIG   = 1;
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
@@ -218,6 +252,10 @@ internal static class NativeSplash
 
     [DllImport("user32.dll")] static extern bool   ShowWindow(IntPtr hWnd, int nCmd);
     [DllImport("user32.dll")] static extern bool   UpdateWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool   DestroyIcon(IntPtr hIcon);
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    static extern uint ExtractIconEx(string lpszFile, int nIconIndex, out IntPtr phiconLarge, out IntPtr phiconSmall, uint nIcons);
     [DllImport("user32.dll")] static extern bool   DestroyWindow(IntPtr hWnd);
     [DllImport("user32.dll")] static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern IntPtr BeginPaint(IntPtr hWnd, ref PAINTSTRUCT ps);

@@ -20,16 +20,24 @@ public sealed record ParseResult(
     Dictionary<string, List<Channel>> Groups);
 
 /// <summary>
+/// Incremental parse progress for large playlists.
+/// </summary>
+public readonly record struct ParseProgressUpdate(int ParsedChannels, double Fraction);
+
+/// <summary>
 /// High-performance M3U/M3U8 parser.
 /// Parses synchronously inside Task.Run so the UI thread is never blocked
 /// and continuations always return to the caller's SynchronizationContext.
 /// </summary>
 public static class M3uParser
 {
-    public static Task<ParseResult> ParseAsync(Stream stream, bool removeDuplicates = false) =>
-        Task.Run(() => ParseSync(stream, removeDuplicates));
+    public static Task<ParseResult> ParseAsync(
+        Stream stream,
+        bool removeDuplicates = false,
+        IProgress<ParseProgressUpdate>? progress = null) =>
+        Task.Run(() => ParseSync(stream, removeDuplicates, progress));
 
-    private static ParseResult ParseSync(Stream stream, bool removeDuplicates)
+    private static ParseResult ParseSync(Stream stream, bool removeDuplicates, IProgress<ParseProgressUpdate>? progress)
     {
         int capacity = stream.CanSeek
             ? (int)Math.Min(stream.Length / 80L, 50_000L)
@@ -44,9 +52,12 @@ public static class M3uParser
 
         string? extinf = null;
         string? line;
+        int lineCount = 0;
+        int parsedChannels = 0;
 
         while ((line = reader.ReadLine()) is not null)
         {
+            lineCount++;
             if (line.Length == 0) continue;
 
             if (line.StartsWith("#EXTINF", StringComparison.Ordinal))
@@ -67,18 +78,9 @@ public static class M3uParser
                     continue;
                 }
                 channels.Add(channel);
+                parsedChannels++;
 
-                // Split by ';' to support multiple group memberships.
-                bool anyGroup = false;
-                foreach (var part in rawGroup.Split(';'))
-                {
-                    var groupName = part.Trim();
-                    if (groupName.Length == 0) continue;
-                    anyGroup = true;
-                    if (!groups.TryGetValue(groupName, out var list))
-                        groups[groupName] = list = new List<Channel>();
-                    list.Add(channel);
-                }
+                bool anyGroup = AddGroups(groups, rawGroup, channel);
 
                 if (!anyGroup)
                 {
@@ -90,9 +92,73 @@ public static class M3uParser
 
                 extinf = null;
             }
+
+            if (progress is not null && (lineCount & 0xFF) == 0)
+                ReportProgress(stream, parsedChannels, progress);
         }
 
+        progress?.Report(new ParseProgressUpdate(parsedChannels, 1.0));
+
         return new ParseResult(channels, groups);
+    }
+
+    private static void ReportProgress(Stream stream, int parsedChannels, IProgress<ParseProgressUpdate> progress)
+    {
+        try
+        {
+            double pct = 0d;
+            if (stream.CanSeek && stream.Length > 0)
+            {
+                pct = (double)stream.Position / stream.Length;
+            }
+            else if (stream is ProgressReadStream tracked && tracked.TotalBytes > 0)
+            {
+                pct = (double)tracked.BytesRead / tracked.TotalBytes;
+            }
+            else
+            {
+                return;
+            }
+
+            progress.Report(new ParseProgressUpdate(parsedChannels, Math.Clamp(pct, 0d, 1d)));
+        }
+        catch
+        {
+            // Progress should never break parsing.
+        }
+    }
+
+    private static bool AddGroups(Dictionary<string, List<Channel>> groups, string rawGroup, Channel channel)
+    {
+        var span = rawGroup.AsSpan();
+        if (span.Length == 0) return false;
+
+        bool anyGroup = false;
+        int start = 0;
+        while (start <= span.Length)
+        {
+            int sep = span[start..].IndexOf(';');
+            ReadOnlySpan<char> part;
+            if (sep < 0)
+            {
+                part = span[start..].Trim();
+                start = span.Length + 1;
+            }
+            else
+            {
+                part = span.Slice(start, sep).Trim();
+                start += sep + 1;
+            }
+
+            if (part.Length == 0) continue;
+            anyGroup = true;
+            var groupName = part.ToString();
+            if (!groups.TryGetValue(groupName, out var list))
+                groups[groupName] = list = new List<Channel>();
+            list.Add(channel);
+        }
+
+        return anyGroup;
     }
 
     // -- Span helpers ---------------------------------------------------------

@@ -72,29 +72,41 @@
             <Grid Grid.Row="4" RowDefinitions="Auto,*">
                 <TextBlock Grid.Row="0" Text="CHANNELS"
                            Foreground="{DynamicResource AppLabelFg}" FontSize="11" Margin="0,0,0,4"/>
-                <ListBox Grid.Row="1" x:Name="ChannelList"
-                         DoubleTapped="OnChannelDoubleTapped"
-                         KeyDown="OnListKeyDown"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="local:ChannelVm">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <!-- Logo: TV emoji shows as placeholder when Logo is null -->
-                                <Panel Width="32" Height="32">
-                                    <TextBlock Text="📺"
+                <Grid Grid.Row="1">
+                    <ListBox x:Name="ChannelList"
+                             DoubleTapped="OnChannelDoubleTapped"
+                             KeyDown="OnListKeyDown"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="local:ChannelVm">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <!-- Logo: TV emoji shows as placeholder when Logo is null -->
+                                    <Panel Width="32" Height="32">
+                                        <TextBlock Text="📺"
+                                                   IsVisible="{Binding ShowLogoPlaceholder}"
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Center"
+                                                   FontSize="18"/>
+                                        <Image Source="{Binding Logo}" Stretch="Uniform"/>
+                                    </Panel>
+                                    <TextBlock Text="{Binding Name}"
                                                VerticalAlignment="Center"
-                                               HorizontalAlignment="Center"
-                                               FontSize="18"/>
-                                    <Image Source="{Binding Logo}" Stretch="Uniform"/>
-                                </Panel>
-                                <TextBlock Text="{Binding Name}"
-                                           VerticalAlignment="Center"
-                                           FontSize="13"
-                                           TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                                               FontSize="13"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock x:Name="ChannelListPlaceholder"
+                               Text="Loading channels..."
+                               IsVisible="False"
+                               IsHitTestVisible="False"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource AppLabelFg}"
+                               FontSize="13" />
+                </Grid>
             </Grid>
 
         </Grid>

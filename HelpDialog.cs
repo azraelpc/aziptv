@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
@@ -37,6 +38,7 @@ public sealed class HelpDialog : Window
             ("S",            "Next audio track",             "Siguiente pista de audio"),
             ("T",            "Next subtitle track",          "Siguiente subt\u00edtulo"),
             ("\u2190 / \u2192", "Seek \u22125 s / +5 s (VOD)", "Retroceder / avanzar 5 s (VOD)"),
+            ("\u2191 / \u2193", "Volume +5% / \u22125%",      "Volumen +5% / \u22125%"),
             ("Num +",        "Volume +5%",                   "Volumen +5%"),
             ("Num \u2212",   "Volume \u22125%",              "Volumen \u22125%"),
             ("Scroll wheel", "Adjust volume",                "Ajustar volumen"),
@@ -85,6 +87,12 @@ public sealed class HelpDialog : Window
         root.Children.Add(rowsPanel);
         root.Children.Add(closeBtn);
         Content = root;
+
+        KeyDown += (_, e) =>
+        {
+            e.Handled = true;
+            Close();
+        };
     }
 
     private static TextBlock Cell(string text, double width = -1, bool bold = false, bool mono = false)

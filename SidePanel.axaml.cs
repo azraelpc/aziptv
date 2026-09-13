@@ -10,10 +10,12 @@ namespace AzIPTV;
 
 public partial class SidePanel : UserControl
 {
+    private static readonly IReadOnlyList<ChannelVm> EmptyChannels = Array.Empty<ChannelVm>();
     private List<Channel> _allChannels = new();
     private Dictionary<string, List<Channel>> _groupedChannels = new();
     private Dictionary<string, int> _playCounts = new();
     private List<Channel> _favouriteChannels = new();
+    private bool _isLoading;
 
     /// <summary>Sentinel URL used by the "Clear Favourites" pseudo-channel.</summary>
     public const string ClearFavsUrl = "__CLEAR_FAVOURITES__";
@@ -37,6 +39,7 @@ public partial class SidePanel : UserControl
         InitializeComponent();
         GroupCombo.ItemsSource   = new[] { "ALL CHANNELS" };
         GroupCombo.SelectedIndex = 0;
+        ChannelList.ItemsSource  = EmptyChannels;
 
         // Tunnel phase fires before the TextBox handles the key itself, so
         // PageUp/PageDown (which the TextBox consumes in the bubble phase) are
@@ -49,6 +52,7 @@ public partial class SidePanel : UserControl
         // DropDownClosed fires AFTER Avalonia has committed the selected item,
         // so SelectedItem is always the confirmed value at that point.
         GroupCombo.DropDownClosed += OnGroupDropDownClosed;
+        UpdateChannelListPlaceholder();
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -58,6 +62,7 @@ public partial class SidePanel : UserControl
         _allChannels     = result.Channels;
         _groupedChannels = result.Groups;
         _playCounts      = playCounts ?? new Dictionary<string, int>();
+        _isLoading       = false;
         _vmCache.Clear();
         _favouriteChannels = BuildFavourites();
 
@@ -66,6 +71,15 @@ public partial class SidePanel : UserControl
         finally { _updatingGroups = false; }
 
         ApplyFilter();
+    }
+
+    public void SetLoadingState(bool isLoading, string loadingText = "Loading channels...")
+    {
+        _isLoading = isLoading;
+        ChannelListPlaceholder.Text = loadingText;
+        if (isLoading && _allChannels.Count == 0)
+            ChannelList.ItemsSource = EmptyChannels;
+        UpdateChannelListPlaceholder();
     }
 
     public void UpdatePlayCounts(Dictionary<string, int> playCounts)
@@ -145,19 +159,31 @@ public partial class SidePanel : UserControl
         var search = (SearchBox.Text ?? string.Empty).Trim();
         var group  = GroupCombo.SelectedItem as string ?? "ALL CHANNELS";
 
-        IEnumerable<Channel> source = group switch
+        IReadOnlyList<Channel> source = group switch
         {
             "FAVOURITES (MOST VIEWED)" => _favouriteChannels,
             "ALL CHANNELS" => _allChannels,
             _              => _groupedChannels.TryGetValue(group, out var g) ? g : Array.Empty<Channel>()
         };
 
+        IReadOnlyList<Channel> filtered;
         if (!string.IsNullOrEmpty(search))
-            source = source.Where(c =>
+            filtered = source.Where(c =>
                 c.Url == ClearFavsUrl ||
-                c.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
+                c.Name.Contains(search, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        else
+            filtered = source;
 
-        ChannelList.ItemsSource = source.Select(GetOrCreateVm).ToList();
+        ChannelList.ItemsSource = new LazyChannelVmList(filtered, GetOrCreateVm);
+        UpdateChannelListPlaceholder();
+    }
+
+    private void UpdateChannelListPlaceholder()
+    {
+        var count = (ChannelList.ItemsSource as IList)?.Count ?? 0;
+        ChannelListPlaceholder.IsVisible = _isLoading && count == 0;
     }
 
     private ChannelVm GetOrCreateVm(Channel c)
@@ -168,6 +194,70 @@ public partial class SidePanel : UserControl
             _vmCache[c.Url] = vm;
         }
         return vm;
+    }
+
+    /// <summary>
+    /// Indexed VM adapter that avoids creating ChannelVm objects for the whole list up front.
+    /// </summary>
+    private sealed class LazyChannelVmList : IList
+    {
+        private readonly IReadOnlyList<Channel> _channels;
+        private readonly Func<Channel, ChannelVm> _factory;
+
+        public LazyChannelVmList(IReadOnlyList<Channel> channels, Func<Channel, ChannelVm> factory)
+        {
+            _channels = channels;
+            _factory = factory;
+        }
+
+        public int Count => _channels.Count;
+        public bool IsReadOnly => true;
+        public bool IsFixedSize => true;
+        public bool IsSynchronized => false;
+        public object SyncRoot => this;
+
+        public object? this[int index]
+        {
+            get => _factory(_channels[index]);
+            set => throw new NotSupportedException();
+        }
+
+        public int Add(object? value) => throw new NotSupportedException();
+        public void Clear() => throw new NotSupportedException();
+
+        public bool Contains(object? value)
+        {
+            if (value is not ChannelVm vm) return false;
+            return _channels.Any(c => c.Url == vm.Url);
+        }
+
+        public int IndexOf(object? value)
+        {
+            if (value is not ChannelVm vm) return -1;
+            for (int i = 0; i < _channels.Count; i++)
+            {
+                if (_channels[i].Url == vm.Url)
+                    return i;
+            }
+            return -1;
+        }
+
+        public void Insert(int index, object? value) => throw new NotSupportedException();
+        public void Remove(object? value) => throw new NotSupportedException();
+        public void RemoveAt(int index) => throw new NotSupportedException();
+
+        public void CopyTo(Array array, int index)
+        {
+            if (array is null) throw new ArgumentNullException(nameof(array));
+            for (int i = 0; i < _channels.Count; i++)
+                array.SetValue(_factory(_channels[i]), index + i);
+        }
+
+        public IEnumerator GetEnumerator()
+        {
+            for (int i = 0; i < _channels.Count; i++)
+                yield return _factory(_channels[i]);
+        }
     }
 
     // ── Event handlers ────────────────────────────────────────────────────────

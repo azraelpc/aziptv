@@ -107,6 +107,11 @@
                             ToolTip.Tip="Switch language / Cambiar idioma"
                             Click="OnLangClicked" />
 
+                        <Button x:Name="WebButton"
+                            Content="WEB"
+                            ToolTip.Tip="Open project website"
+                            Click="OnWebClicked" />
+
                 </StackPanel>
 
                 <!-- VOD seek bar: only visible for seekable/VOD content -->
@@ -168,6 +173,46 @@
                            Foreground="White"
                            FontSize="15"
                            FontWeight="SemiBold" />
+            </Border>
+        </Popup>
+
+        <Popup x:Name="NowPlayingPopup"
+               Grid.Row="0"
+               Placement="AnchorAndGravity"
+               PlacementAnchor="TopRight"
+               PlacementGravity="BottomLeft"
+               PlacementTarget="{Binding ElementName=VideoGrid}"
+               HorizontalOffset="-12"
+               VerticalOffset="12"
+               IsLightDismissEnabled="False">
+            <Border Background="#DD101010"
+                    CornerRadius="9"
+                    Padding="18,12">
+                <StackPanel Orientation="Horizontal" Spacing="15">
+                    <Panel Width="48" Height="48">
+                        <TextBlock x:Name="NowPlayingLogoFallback"
+                                   Text="📺"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center"
+                                   FontSize="27" />
+                        <Image x:Name="NowPlayingLogo"
+                               Width="48"
+                               Height="48"
+                               Stretch="Uniform" />
+                    </Panel>
+                    <StackPanel Spacing="3"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="Playing:"
+                                   Foreground="#CCFFFFFF"
+                                   FontSize="17" />
+                        <TextBlock x:Name="NowPlayingText"
+                                   Foreground="White"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   MaxWidth="420"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </StackPanel>
             </Border>
         </Popup>
 

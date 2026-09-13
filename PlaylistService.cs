@@ -31,21 +31,23 @@ public static class PlaylistService
     /// Buffers the HTTP response into RAM, then parses on a background thread.
     /// No ConfigureAwait(false) — continuations return to the caller's SynchronizationContext.
     /// </summary>
-    public static async Task<ParseResult> LoadFromUrlAsync(string url)
+    public static async Task<ParseResult> LoadFromUrlAsync(string url, IProgress<ParseProgressUpdate>? progress = null)
     {
         using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
-        var ms = new System.IO.MemoryStream();
-        using (var src = await response.Content.ReadAsStreamAsync())
-            await src.CopyToAsync(ms);
-        ms.Position = 0;
-        return await M3uParser.ParseAsync(ms, LoadRemoveDuplicates()); // Task.Run inside; continuation on UI thread
+        using var src = await response.Content.ReadAsStreamAsync();
+        if (response.Content.Headers.ContentLength is long len && len > 0)
+        {
+            using var tracked = new ProgressReadStream(src, len);
+            return await M3uParser.ParseAsync(tracked, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+        }
+        return await M3uParser.ParseAsync(src, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
     }
 
-    public static async Task<ParseResult> LoadFromFileAsync(string path)
+    public static async Task<ParseResult> LoadFromFileAsync(string path, IProgress<ParseProgressUpdate>? progress = null)
     {
         using var stream = File.OpenRead(path);
-        return await M3uParser.ParseAsync(stream, LoadRemoveDuplicates()); // Task.Run inside; continuation on UI thread
+        return await M3uParser.ParseAsync(stream, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
     }
 
     // ── Settings ─────────────────────────────────────────────────────────────
@@ -62,6 +64,24 @@ public static class PlaylistService
             else if (TryGet(line, "LastStreamUrl=", out v))     ls = Decode(v);
         }
         return (pu, pf, ls);
+    }
+
+    public static string LoadLastChannelName()
+    {
+        if (!File.Exists(IniPath)) return string.Empty;
+        foreach (var line in File.ReadLines(IniPath))
+            if (TryGet(line, "LastChannelName=", out var v))
+                return Decode(v) ?? string.Empty;
+        return string.Empty;
+    }
+
+    public static string LoadLastChannelLogoUrl()
+    {
+        if (!File.Exists(IniPath)) return string.Empty;
+        foreach (var line in File.ReadLines(IniPath))
+            if (TryGet(line, "LastChannelLogoUrl=", out var v))
+                return Decode(v) ?? string.Empty;
+        return string.Empty;
     }
 
     /// <summary>Returns the saved theme name ("Dark" or "Light"). Defaults to "Dark".</summary>
@@ -148,10 +168,25 @@ public static class PlaylistService
         WriteIni(pu ?? string.Empty, pf ?? string.Empty, url, LoadUrlHistory(), LoadTheme());
     }
 
+    public static void SaveLastChannelName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var (pu, pf, ls) = LoadSettings();
+        WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, LoadUrlHistory(), LoadTheme(), lastChannelName: name);
+    }
+
+    public static void SaveLastChannelLogoUrl(string logoUrl)
+    {
+        if (string.IsNullOrWhiteSpace(logoUrl)) return;
+        var (pu, pf, ls) = LoadSettings();
+        WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, LoadUrlHistory(), LoadTheme(), lastChannelLogoUrl: logoUrl);
+    }
+
     private static void WriteIni(string playlistUrl, string playlistFile,
                                   string lastStreamUrl, List<UrlHistoryEntry> history,
                                   string theme = "Dark", string language = "",
-                                  string lastGroup = "", string recordingFolder = "")
+                                  string lastGroup = "", string recordingFolder = "",
+                                  string lastChannelName = "", string lastChannelLogoUrl = "")
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("[AzIPTV]");
@@ -163,6 +198,8 @@ public static class PlaylistService
         sb.AppendLine($"PlaylistUrl={Encode(playlistUrl)}");
         sb.AppendLine($"PlaylistFile={Encode(playlistFile)}");
         sb.AppendLine($"LastStreamUrl={Encode(lastStreamUrl)}");
+        sb.AppendLine($"LastChannelName={Encode(string.IsNullOrEmpty(lastChannelName) ? LoadLastChannelName() : lastChannelName)}");
+        sb.AppendLine($"LastChannelLogoUrl={Encode(string.IsNullOrEmpty(lastChannelLogoUrl) ? LoadLastChannelLogoUrl() : lastChannelLogoUrl)}");
         for (int i = 0; i < history.Count; i++)
         {
             sb.AppendLine($"UrlHistoryUrl{i}={Encode(history[i].Url)}");
@@ -256,6 +293,32 @@ public static class PlaylistService
         history.Insert(0, new UrlHistoryEntry(url, defaultName));
         if (history.Count > MaxUrlHistory)
             history.RemoveRange(MaxUrlHistory, history.Count - MaxUrlHistory);
+        var (pu, pf, ls) = LoadSettings();
+        WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, history, LoadTheme());
+    }
+
+    public static void SaveUrlHistoryEntry(string originalUrl, string url, string name)
+    {
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(name)) return;
+        if (FixedPlaylists.Any(f => string.Equals(f.Url, url.Trim(), StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        var history = LoadUrlHistory();
+        var originalIndex = history.FindIndex(e => string.Equals(e.Url, originalUrl, StringComparison.OrdinalIgnoreCase));
+        if (originalIndex >= 0)
+            history.RemoveAt(originalIndex);
+
+        history.RemoveAll(e => string.Equals(e.Url, url, StringComparison.OrdinalIgnoreCase));
+
+        var entry = new UrlHistoryEntry(url.Trim(), name.Trim());
+        if (originalIndex >= 0 && originalIndex <= history.Count)
+            history.Insert(originalIndex, entry);
+        else
+            history.Insert(0, entry);
+
+        if (history.Count > MaxUrlHistory)
+            history.RemoveRange(MaxUrlHistory, history.Count - MaxUrlHistory);
+
         var (pu, pf, ls) = LoadSettings();
         WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, history, LoadTheme());
     }
