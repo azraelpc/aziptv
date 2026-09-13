@@ -177,16 +177,15 @@ public static class PlaylistService
 
     public static void SaveLastChannelLogoUrl(string logoUrl)
     {
-        if (string.IsNullOrWhiteSpace(logoUrl)) return;
         var (pu, pf, ls) = LoadSettings();
-        WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, LoadUrlHistory(), LoadTheme(), lastChannelLogoUrl: logoUrl);
+        WriteIni(pu ?? string.Empty, pf ?? string.Empty, ls ?? string.Empty, LoadUrlHistory(), LoadTheme(), lastChannelLogoUrl: logoUrl ?? string.Empty);
     }
 
     private static void WriteIni(string playlistUrl, string playlistFile,
                                   string lastStreamUrl, List<UrlHistoryEntry> history,
                                   string theme = "Dark", string language = "",
                                   string lastGroup = "", string recordingFolder = "",
-                                  string lastChannelName = "", string lastChannelLogoUrl = "")
+                                  string? lastChannelName = null, string? lastChannelLogoUrl = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("[AzIPTV]");
@@ -198,8 +197,8 @@ public static class PlaylistService
         sb.AppendLine($"PlaylistUrl={Encode(playlistUrl)}");
         sb.AppendLine($"PlaylistFile={Encode(playlistFile)}");
         sb.AppendLine($"LastStreamUrl={Encode(lastStreamUrl)}");
-        sb.AppendLine($"LastChannelName={Encode(string.IsNullOrEmpty(lastChannelName) ? LoadLastChannelName() : lastChannelName)}");
-        sb.AppendLine($"LastChannelLogoUrl={Encode(string.IsNullOrEmpty(lastChannelLogoUrl) ? LoadLastChannelLogoUrl() : lastChannelLogoUrl)}");
+        sb.AppendLine($"LastChannelName={Encode(lastChannelName ?? LoadLastChannelName())}");
+        sb.AppendLine($"LastChannelLogoUrl={Encode(lastChannelLogoUrl ?? LoadLastChannelLogoUrl())}");
         for (int i = 0; i < history.Count; i++)
         {
             sb.AppendLine($"UrlHistoryUrl{i}={Encode(history[i].Url)}");

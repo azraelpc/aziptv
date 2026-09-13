@@ -62,6 +62,19 @@ public class VideoView : NativeControlHost
     /// <summary>Fired on the UI thread when the middle mouse button is released over the video.</summary>
     public event Action? VideoMiddleClicked;
 
+    public bool HasNativeFocus => _hwnd != IntPtr.Zero && IsDescendantOfVideoHwnd(NativeMethods.GetFocus());
+
+    public void EnsureArrowCursor()
+    {
+        NativeMethods.SetCursor(NativeMethods.LoadCursor(IntPtr.Zero, NativeMethods.IDC_ARROW));
+    }
+
+    public void FocusVideoSurface()
+    {
+        if (_hwnd != IntPtr.Zero)
+            NativeMethods.SetFocus(_hwnd);
+    }
+
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
     {
         _hwnd = NativeMethods.CreateWindowEx(
@@ -85,6 +98,7 @@ public class VideoView : NativeControlHost
         _oldWndProc = NativeMethods.SetWindowLongPtr(
             _hwnd, NativeMethods.GWLP_WNDPROC,
             Marshal.GetFunctionPointerForDelegate(_subclassDelegate));
+        EnsureArrowCursor();
 
         // Install a low-level mouse hook so we receive mouse events even when
         // VLC's DirectX child windows are on top and swallowing all Win32 messages.
@@ -132,6 +146,11 @@ public class VideoView : NativeControlHost
 
     private IntPtr VideoWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        if (msg == NativeMethods.WM_SETCURSOR)
+        {
+            EnsureArrowCursor();
+            return new IntPtr(1);
+        }
         if (msg == NativeMethods.WM_ERASEBKGND && _darkBrush != IntPtr.Zero)
         {
             NativeMethods.GetClientRect(hWnd, out var rect);
@@ -155,6 +174,7 @@ public class VideoView : NativeControlHost
 
                 if (msg == NativeMethods.WM_LBUTTONDOWN)
                 {
+                    FocusVideoSurface();
                     // All DispatcherTimer operations must run on the UI thread.
                     Dispatcher.UIThread.Post(() =>
                     {
@@ -284,6 +304,7 @@ internal static class NativeMethods
     public const int  WM_RBUTTONUP   = 0x0205;
     public const int  WM_MBUTTONUP   = 0x0208;
     public const int  WM_MOUSEWHEEL  = 0x020A;
+    public const uint WM_SETCURSOR   = 0x0020;
     public const uint WM_ERASEBKGND  = 0x0014;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -370,6 +391,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetFocus();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetFocus(IntPtr hWnd);
 
     // ── Native context menu ──────────────────────────────────────────────────
 

@@ -8,34 +8,36 @@ Download: <a href="https://github.com/azraelpc/aziptv/releases">https://github.c
 
 ## Features
 
-- **M3U / M3U8 playlist support** — load from a URL or a local file; 
-- **Channel browser** — side panel with full-text search and group (TV category) filter
-- **Search sorting behavior** — when the Search box contains text, matching channels are shown in alphabetical order; with an empty Search box, channels keep the playlist's original/default order
-- **FAVOURITES (MOST VIEWED) group** — channels you have played at least once are automatically ranked by play count at the top of the group list; counts are stored per-playlist in `user.ini`; a **Clear Favourites** entry at the bottom of the list resets all counters (with confirmation)
-- **Keyboard-first navigation** — move through the channel list, search box, and group picker entirely from the keyboard
-- **URL history** — save and name your favourite playlists; window title shows the active playlist name
-- **Playlist manager dialog** — *Load URL* now opens a saved-playlists manager (double-click or **Load** to open, **Edit** for saved entries, and **Add IPTV M3U playlist** to save name+URL)
-- **Volume control** — mouse wheel, numpad `+`/`-`, or `M` to mute; overlay shows the current level in both windowed and fullscreen modes
-- **Arrow-key volume** — when no interactive panel/control is active, `↑` / `↓` act as volume `+5%` / `−5%`
-- **Always-on-top** — pin the window above other apps
-- **Recording (REC)** — press `R` to open the recording scheduler: start immediately or at a scheduled date/time; optional fixed duration (stops automatically); option to close the app when recording ends; pending schedule shown in the button label; a blinking **⬤ REC** overlay shows remaining free disk space on the recording drive
-- **Auto-retry / circuit-breaker** — automatically restarts on stream errors, stays alive during active recordings
-- **Dark / Light theme** — follows the OS by default, can be overridden and persisted
-- **Fullscreen** — press `F` or double-click the video; controls hide automatically; `Esc` always exits
-- **Pause / freeze** — pressing `P` on a live stream pauses and freezes the last frame (no white flash); pressing again reconnects; on VOD it resumes from the paused position
-- **VOD playback controls** — when a seekable / on-demand stream is detected, a seek bar row appears below the toolbar showing current and total time; click anywhere on the bar to jump to that position; `←` / `→` (or the **-5s** / **+5s** buttons) use an additive seek model: each press accumulates ±5 s (shown in an overlay as `⏪ -10s`, `⏩ +15s`, …) and commits with a single seek 800 ms after the last press — same feel as Netflix or Plex
-- **Aspect ratio cycling** — rotate through standard ratios or reset to default via right-click menu
-- **Audio & subtitle track selection** — cycle tracks or disable subtitles from the right-click menu
-- **Volume preset submenu** — set volume to 0 / 10 / 25 / 50 / 75 / 100 / 150 / 200 % via right-click
-- **Copy stream URL** — copy the current stream URL to clipboard from the right-click menu
-- **Stream info overlay** — press `I` to show video/audio codec, resolution, fps, bitrate, and channel info over the video; auto-hides after 10 seconds or dismiss manually
-- **Now-playing overlay** — when playback starts (and also when pressing `I`), a top-right popup shows **Playing:** with channel logo + channel name
-- **Football TV Guide** — right-click context menu opens `https://liveonsat.com/2day.php` in the default browser
-- **Keyboard shortcuts help** — press `H` or use the Help button for a full shortcut reference
-- **Help dialog quick-close** — while the Help popup is open, pressing any key closes it
-- **English / Spanish UI** — switch language with the flag button; preference is saved in `user.ini`
-- **WEB / Update button** — toolbar **WEB** button opens project page; if a newer GitHub release is detected, it changes to **Update!** and opens the releases page
-- **Native splash + startup UX** — splash is taskbar-integrated with app icon; startup defers heavy playback init and improves channel-loading status/error messaging
+- **M3U / M3U8 playlist support** - load from a URL or a local file; 
+- **Channel browser** - side panel with full-text search and group (TV category) filter
+- **Search sorting behavior** - when the Search box contains text, matching channels are shown in alphabetical order; with an empty Search box, channels keep the playlist's original/default order
+- **FAVOURITES (MOST VIEWED) group** - channels you have played at least once are automatically ranked by play count at the top of the group list; counts are stored per-playlist in `user.ini`; a **Clear Favourites** entry at the bottom of the list resets all counters (with confirmation)
+- **Keyboard-first navigation** - move through the channel list, search box, and group picker entirely from the keyboard
+- **URL history** - save and name your favourite playlists; window title shows the active playlist name
+- **Playlist manager dialog** - *Load URL* now opens a saved-playlists manager (double-click or **Load** to open, **Edit** for saved entries, and **Add IPTV M3U playlist** to save name+URL)
+- **Volume control** - mouse wheel, numpad `+`/`-`, or `M` to mute; overlay shows the current level in both windowed and fullscreen modes
+- **Arrow-key volume** - when no interactive panel/control is active, `↑` / `↓` act as volume `+5%` / `−5%`
+- **Always-on-top** - pin the window above other apps
+- **Recording (REC)** - press `R` to open the recording scheduler: start immediately or at a scheduled date/time; optional fixed duration (stops automatically); option to close the app when recording ends; pending schedule shown in the button label; a blinking **⬤ REC** overlay shows remaining free disk space on the recording drive
+- **Auto-retry / circuit-breaker** - automatically restarts on stream errors, stays alive during active recordings
+- **Dark / Light theme** - follows the OS by default, can be overridden and persisted
+- **Fullscreen** - press `F` or double-click the video; controls hide automatically; `Esc` always exits
+- **Pause / freeze** - pressing `P` on a live stream pauses and freezes the last frame (no white flash); pressing again reconnects; on VOD it resumes from the paused position
+- **VOD playback controls** - when a seekable / on-demand stream is detected, a seek bar row appears below the toolbar showing current and total time; click anywhere on the bar to jump to that position; `←` / `→` (or the **-5s** / **+5s** buttons) use an additive seek model: each press accumulates ±5 s (shown in an overlay as `⏪ -10s`, `⏩ +15s`, …) and commits with a single seek 800 ms after the last press - same feel as Netflix or Plex
+- **Improved live vs VOD detection** - the app no longer relies only on VLC `IsSeekable`; HLS `.m3u8` streams are probed and treated as live unless the manifest explicitly indicates VOD (for example `#EXT-X-ENDLIST` or `#EXT-X-PLAYLIST-TYPE:VOD`), reducing false VOD seek bars on live channels with DVR-like behavior
+- **Aspect ratio cycling** - rotate through standard ratios or reset to default via right-click menu
+- **Audio & subtitle track selection** - cycle tracks or disable subtitles from the right-click menu
+- **Volume preset submenu** - set volume to 0 / 10 / 25 / 50 / 75 / 100 / 150 / 200 % via right-click
+- **Copy stream URL** - copy the current stream URL to clipboard from the right-click menu
+- **Stream info overlay** - press `I` to show video/audio codec, resolution, fps, bitrate, and channel info over the video; auto-hides after 10 seconds or dismiss manually
+- **Now-playing overlay** - when playback starts (and also when pressing `I`), a top-right popup shows **Playing:** with channel logo + channel name
+- **Football TV Guide** - right-click context menu opens `https://liveonsat.com/2day.php` in the default browser
+- **Keyboard shortcuts help** - press `H` or use the Help button for a full shortcut reference
+- **Quick quit shortcut** - press `Q` once to show a 5-second confirmation message; the app only quits if you press `Q` again while that message is still visible. Changing `EN/ES` restarts the same 5-second confirmation in the new language
+- **Help dialog quick-close** - while the Help popup is open, pressing any key closes it
+- **English / Spanish UI** - switch language with the flag button; preference is saved in `user.ini`
+- **WEB / Update button** - toolbar **WEB** button opens project page; if a newer GitHub release is detected, it changes to **Update!** and opens the releases page
+- **Native splash + startup UX** - splash is taskbar-integrated with app icon; startup defers heavy playback init and improves channel-loading status/error messaging
 
 ## Requirements
 
@@ -44,7 +46,7 @@ Download: <a href="https://github.com/azraelpc/aziptv/releases">https://github.c
 | .NET      | 8.0+    |
 | Windows   | 10 / 11 (x64) |
 
-> Linux / macOS are not supported — the app uses Win32 P/Invoke for the VLC overlay, mouse/keyboard hooks, native splash, and window management.
+> Linux / macOS are not supported - the app uses Win32 P/Invoke for the VLC overlay, mouse/keyboard hooks, native splash, and window management.
 
 ## Build
 
@@ -68,18 +70,19 @@ dotnet run
 |-----|--------|
 | `Tab` | Toggle channel browser |
 | `Esc` | Close channel browser / exit fullscreen |
-| `P` | Play / Pause — pauses (freezes frame) on live; resumes on VOD |
+| `P` | Play / Pause - pauses (freezes frame) on live; resumes on VOD |
 | `F` | Toggle fullscreen |
 | `U` | Load playlist from URL |
 | `L` | Load playlist from file |
 | `A` | Next aspect ratio |
 | `S` | Next audio track |
 | `T` | Next subtitle track |
-| `←` / `→` | Seek −5 s / +5 s (VOD only — additive, commits after 800 ms) |
+| `←` / `→` | Seek −5 s / +5 s (VOD only - additive, commits after 800 ms) |
 | `R` | Open recording scheduler (start now or scheduled, optional duration + auto-close) |
-| `I` | Show stream info overlay (codec, resolution, fps, audio, playlist — 10 s, click, or press `I` again to dismiss); also shows now-playing popup |
+| `I` | Show stream info overlay (codec, resolution, fps, audio, playlist - 10 s, click, or press `I` again to dismiss); also shows now-playing popup |
 | `M` | Mute / Unmute |
 | `H` | Show keyboard shortcuts help |
+| `Q` | Press once to show quit confirmation; press again while the message is still visible to quit |
 | `↑` / `↓` | Volume +5 % / −5 % (when no interactive panel/control is active) |
 | Numpad `+` / `−` | Volume up / down |
 | Mouse wheel (over video) | Volume up / down |
@@ -110,20 +113,20 @@ This file is excluded from version control (see [`.gitignore`](.gitignore)).
 | `Theme` | `Dark` or `Light` | `Dark` |
 | `Language` | `en` or `es` | `en` |
 | `RemoveDuplicateChannels` | Always written as `0`; deduplication is permanently disabled | `0` |
-| `PlaylistUrl` / `PlaylistFile` | Last loaded playlist | — |
-| `LastStreamUrl` | Last played stream URL | — |
-| `LastChannelName` | Last played channel name (used on startup before playlist/channel metadata is reloaded) | — |
-| `LastGroup` | Last selected TV group in the channel browser | — |
-| `RecordingFolder` | Output folder for recordings (set via the REC dialog); defaults to the user's Desktop | — |
-| `[Favs_<id>]` sections | Per-playlist play counts (SHA-256 hashed, credential-safe) | — |
+| `PlaylistUrl` / `PlaylistFile` | Last loaded playlist | - |
+| `LastStreamUrl` | Last played stream URL | - |
+| `LastChannelName` | Last played channel name (used on startup before playlist/channel metadata is reloaded) | - |
+| `LastGroup` | Last selected TV group in the channel browser | - |
+| `RecordingFolder` | Output folder for recordings (set via the REC dialog); defaults to the user's Desktop | - |
+| `[Favs_<id>]` sections | Per-playlist play counts (SHA-256 hashed, credential-safe) | - |
 
-Sensitive stream URLs (including any embedded credentials) are **never** stored in plain text — only the hostname is shown in the status bar.
+Sensitive stream URLs (including any embedded credentials) are **never** stored in plain text - only the hostname is shown in the status bar.
 
 ## Dependencies
 
-- [Avalonia](https://avaloniaui.net/) 11.2.7 — cross-platform UI framework
-- [LibVLCSharp](https://code.videolan.org/videolan/LibVLCSharp) 3.8.5 — VLC bindings
-- [VideoLAN.LibVLC.Windows](https://www.nuget.org/packages/VideoLAN.LibVLC.Windows) 3.0.21 — bundled VLC native libraries
+- [Avalonia](https://avaloniaui.net/) 11.2.7 - cross-platform UI framework
+- [LibVLCSharp](https://code.videolan.org/videolan/LibVLCSharp) 3.8.5 - VLC bindings
+- [VideoLAN.LibVLC.Windows](https://www.nuget.org/packages/VideoLAN.LibVLC.Windows) 3.0.21 - bundled VLC native libraries
 
 All dependencies are restored automatically via NuGet on first build.
 
@@ -146,78 +149,81 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 
 ### 2026-09-13
 
-- **Now-playing popup (top-right)** — when playback starts (manual or automatic), a top-right popup shows **Playing:** plus channel logo + channel name; size increased for better readability
-- **Toolbar WEB / Update button** — added **WEB** button that opens `https://github.com/azraelpc/aziptv/`; background GitHub release check switches it to **Update!** (opens releases page) when a newer version is found
-- **Silent update-check failures** — if the GitHub update check fails, no user-facing error is shown and the button remains **WEB**
-- **Playlist manager redesign (Load URL)** — URL loading dialog now lists saved playlists with per-row **Load** / **Edit**, supports double-click to load, and adds a bottom **Add IPTV M3U playlist** flow (name + URL + save)
-- **Startup panel behavior fix** — when startup restores/plays a channel, playlist auto-load no longer forces the side channel list open; manual playlist loads still open the list after load
-- **Startup source exclusivity (URL vs file)** — loading from URL now clears saved file startup source; loading from file clears saved URL startup source (history entries are kept)
-- **Startup/taskbar improvements** — startup path was refactored to defer heavy playback initialization; splash/taskbar behavior was adjusted so the app appears immediately in taskbar and uses the correct app icon from startup
-- **App version display** — centralized app version constant and updated UI title/splash text to show app name + version
-- **Loading/status messaging improvements** — loading text now includes playlist name when available (playlist load + channel-list loading messages)
-- **Live loading progress** — while parsing large playlists, status and side panel show loaded channels + percentage (e.g. `Loading channels list: NAME (25000 - 50%)`); in Spanish UI this is localized automatically (`Cargando lista de canales: NAME (25000 - 50%)`)
-- **Sidebar loading placeholder** — when channel list is still empty during load, side panel now shows a centered loading placeholder message
-- **Concise playlist download errors** — URL download failures are now summarized in one line (e.g. `Error: Can't download playlist ...: Error 404.`) instead of full exception blocks
-- **Channel identity persistence** — app now saves/restores last channel name (`LastChannelName`) so startup labels use channel name instead of URL host fallback
-- **Stream info enhancements (`I`)** — stream info overlay now includes playlist name (when available) between channel and URL, and opening stream info also triggers now-playing popup
-- **Help popup behavior** — `H` acts as open/close toggle from main window context; once Help is open, pressing any key closes it immediately
-- **Keyboard shortcuts** — added `↑ / ↓` volume shortcut behavior (when no interactive panel/control is active) and documented it in Help
-- **Channel-load progress format** — during playlist parsing, loading messages now show only loaded channel count + percent (`(N - X%)`) instead of a fluctuating estimated total
-- **Spanish localization coverage** — user-facing runtime loading/playback/recording/status messages are now consistently localized when language is set to `es`
-- **Filtered search ordering** — channel results are now alphabetically sorted only while a search term is active; normal browsing still preserves the playlist order
+- **Now-playing popup (top-right)** - when playback starts (manual or automatic), a top-right popup shows **Playing:** plus channel logo + channel name; size increased for better readability
+- **Toolbar WEB / Update button** - added **WEB** button that opens `https://github.com/azraelpc/aziptv/`; background GitHub release check switches it to **Update!** (opens releases page) when a newer version is found
+- **Silent update-check failures** - if the GitHub update check fails, no user-facing error is shown and the button remains **WEB**
+- **Playlist manager redesign (Load URL)** - URL loading dialog now lists saved playlists with per-row **Load** / **Edit**, supports double-click to load, and adds a bottom **Add IPTV M3U playlist** flow (name + URL + save)
+- **Startup panel behavior fix** - when startup restores/plays a channel, playlist auto-load no longer forces the side channel list open; manual playlist loads still open the list after load
+- **Startup source exclusivity (URL vs file)** - loading from URL now clears saved file startup source; loading from file clears saved URL startup source (history entries are kept)
+- **Startup/taskbar improvements** - startup path was refactored to defer heavy playback initialization; splash/taskbar behavior was adjusted so the app appears immediately in taskbar and uses the correct app icon from startup
+- **First-run default playlist** - if no playlist is saved and there are no user-saved playlist entries yet, startup automatically loads the first built-in playlist instead of leaving the player idle
+- **App version display** - centralized app version constant and updated UI title/splash text to show app name + version
+- **Loading/status messaging improvements** - loading text now includes playlist name when available (playlist load + channel-list loading messages)
+- **Live loading progress** - while parsing large playlists, status and side panel show loaded channels + percentage (e.g. `Loading channels list: NAME (25000 - 50%)`); in Spanish UI this is localized automatically (`Cargando lista de canales: NAME (25000 - 50%)`)
+- **Sidebar loading placeholder** - when channel list is still empty during load, side panel now shows a centered loading placeholder message
+- **Concise playlist download errors** - URL download failures are now summarized in one line (e.g. `Error: Can't download playlist ...: Error 404.`) instead of full exception blocks
+- **Channel identity persistence** - app now saves/restores last channel name (`LastChannelName`) so startup labels use channel name instead of URL host fallback
+- **Stream info enhancements (`I`)** - stream info overlay now includes playlist name (when available) between channel and URL, and opening stream info also triggers now-playing popup
+- **Help popup behavior** - `H` acts as open/close toggle from main window context; once Help is open, pressing any key closes it immediately
+- **Keyboard shortcuts** - added `↑ / ↓` volume shortcut behavior (when no interactive panel/control is active) and documented it in Help
+- **Channel-load progress format** - during playlist parsing, loading messages now show only loaded channel count + percent (`(N - X%)`) instead of a fluctuating estimated total
+- **Spanish localization coverage** - user-facing runtime loading/playback/recording/status messages are now consistently localized when language is set to `es`
+- **HLS live/VOD classification fix** - `.m3u8` streams such as Pluto-style live channels are now checked via manifest contents and treated as live by default unless the playlist positively identifies itself as VOD, preventing false seek-bar/VOD behavior on many live feeds
+- **Filtered search ordering** - channel results are now alphabetically sorted only while a search term is active; normal browsing still preserves the playlist order
+- **Quick quit hotkey** - added player-only `Q` handling that only exits while the on-screen confirmation message is still visible; changing `EN/ES` relocalizes the message and restarts the 5-second window
 
 ### 2026-05-24 (VOD + pause)
 
-- **Pause instead of Stop** — `P` (and the Play button) now **pauses** playback, freezing the last rendered frame instead of clearing the video surface (no more white/blank window); for VOD streams pressing `P` again **resumes** from the paused position; for live streams it reconnects; button label reflects state: ⏸ Pause / ▶ Resume / ▶ Play
-- **VOD seek bar** — when a seekable / on-demand stream is detected (`IsSeekable && Length > 0`), a second row appears below the toolbar with: current time · progress slider · total time · **-5s** and **+5s** buttons; the bar hides automatically for live channels
-- **Additive seek (Netflix model)** — each press of **-5s** / **+5s** (or `←` / `→`) accumulates: first press ±5 s, second rapid press ±10 s, etc.; the running total is shown in the volume overlay (e.g. `⏩ +15s`); a single seek is committed 800 ms after the last press
-- **Seek bar click-to-position** — clicking anywhere on the progress bar seeks to that exact position; fixed an Avalonia event-handling issue where Slider's internal `PointerPressed` handler (which marks the event as handled) was suppressing our drag-flag setter, causing the position timer to overwrite the clicked value before the seek fired
-- **`←` / `→` keyboard shortcuts** — seek back / forward 5 s (VOD only, same additive model); added to the Help dialog
-- **Duplicate channels** — `RemoveDuplicateChannels` INI setting is now ignored; duplicates are always kept (written as `0` to `user.ini`)
+- **Pause instead of Stop** - `P` (and the Play button) now **pauses** playback, freezing the last rendered frame instead of clearing the video surface (no more white/blank window); for VOD streams pressing `P` again **resumes** from the paused position; for live streams it reconnects; button label reflects state: ⏸ Pause / ▶ Resume / ▶ Play
+- **VOD seek bar** - when a seekable / on-demand stream is detected (`IsSeekable && Length > 0`), a second row appears below the toolbar with: current time · progress slider · total time · **-5s** and **+5s** buttons; the bar hides automatically for live channels
+- **Additive seek (Netflix model)** - each press of **-5s** / **+5s** (or `←` / `→`) accumulates: first press ±5 s, second rapid press ±10 s, etc.; the running total is shown in the volume overlay (e.g. `⏩ +15s`); a single seek is committed 800 ms after the last press
+- **Seek bar click-to-position** - clicking anywhere on the progress bar seeks to that exact position; fixed an Avalonia event-handling issue where Slider's internal `PointerPressed` handler (which marks the event as handled) was suppressing our drag-flag setter, causing the position timer to overwrite the clicked value before the seek fired
+- **`←` / `→` keyboard shortcuts** - seek back / forward 5 s (VOD only, same additive model); added to the Help dialog
+- **Duplicate channels** - `RemoveDuplicateChannels` INI setting is now ignored; duplicates are always kept (written as `0` to `user.ini`)
 
 ### 2026-05-24 (later)
 
-- **Stream info overlay (`I`)** — press `I` or right-click → *Stream Info (I)* to display video/audio codec, resolution, fps, bitrate, channel URL, and current volume over the video; auto-hides after 10 seconds, on click, or by pressing `I` again while visible
-- **Red recording indicator** — a blinking red **⬤ REC** dot appears in the top-left of the video area (Popup overlay, floats above the VLC native surface) for the entire duration of a recording, including in fullscreen; also shows remaining free disk space on the recording drive (refreshed every 10 s)
-- **STOP button countdown** — when recording with a fixed duration, the REC button shows a live countdown (`⏹ STOP  MM:SS (R)` or `H:MM:SS`) updating every second
-- **Recording folder in REC dialog** — the *Schedule Recording* dialog now has a **Recording folder** section at the bottom showing the saved path with a **Browse…** button; the chosen folder is saved to `user.ini` immediately when selected (even if the dialog is cancelled); defaults to the user's Desktop on first use; clicking *Schedule start* or *Duration* focuses the corresponding input field automatically; `Esc` acts as Cancel
-- **Exit confirmation** — closing the window while a recording is active or scheduled shows a confirmation dialog; three variants depending on whether it's an active recording, a scheduled one, or both; bilingual (EN/ES)
-- **Keyboard shortcut hints in context menu** — right-click items now show their shortcut: *Next Aspect Ratio (A)*, *Next Audio Track (S)*, *Next Subtitles Track (T)*, *Mute/Unmute Audio (M)*
-- **Volume overlay in windowed mode** — the volume level popup (shown when using `+`/`-` or the mouse wheel) now appears in both windowed and fullscreen modes
-- **Football TV Guide** — right-click context menu → *Football TV Guide* opens `https://liveonsat.com/2day.php` in the default browser
+- **Stream info overlay (`I`)** - press `I` or right-click → *Stream Info (I)* to display video/audio codec, resolution, fps, bitrate, channel URL, and current volume over the video; auto-hides after 10 seconds, on click, or by pressing `I` again while visible
+- **Red recording indicator** - a blinking red **⬤ REC** dot appears in the top-left of the video area (Popup overlay, floats above the VLC native surface) for the entire duration of a recording, including in fullscreen; also shows remaining free disk space on the recording drive (refreshed every 10 s)
+- **STOP button countdown** - when recording with a fixed duration, the REC button shows a live countdown (`⏹ STOP  MM:SS (R)` or `H:MM:SS`) updating every second
+- **Recording folder in REC dialog** - the *Schedule Recording* dialog now has a **Recording folder** section at the bottom showing the saved path with a **Browse…** button; the chosen folder is saved to `user.ini` immediately when selected (even if the dialog is cancelled); defaults to the user's Desktop on first use; clicking *Schedule start* or *Duration* focuses the corresponding input field automatically; `Esc` acts as Cancel
+- **Exit confirmation** - closing the window while a recording is active or scheduled shows a confirmation dialog; three variants depending on whether it's an active recording, a scheduled one, or both; bilingual (EN/ES)
+- **Keyboard shortcut hints in context menu** - right-click items now show their shortcut: *Next Aspect Ratio (A)*, *Next Audio Track (S)*, *Next Subtitles Track (T)*, *Mute/Unmute Audio (M)*
+- **Volume overlay in windowed mode** - the volume level popup (shown when using `+`/`-` or the mouse wheel) now appears in both windowed and fullscreen modes
+- **Football TV Guide** - right-click context menu → *Football TV Guide* opens `https://liveonsat.com/2day.php` in the default browser
 
 ### 2026-05-24
 
-- **Recording scheduler** — pressing `R` now opens a dialog instead of immediately starting; choose *Start Now* or a scheduled date/time (`yyyy-MM-dd HH:mm` text input); optional fixed duration (hours + minutes, stops automatically); optional *Close app when done*; pending schedule shown in the REC button label (`⏳ REC HH:mm`); clicking `R` again while scheduled cancels it
-- **Last group restored on startup** — the selected TV group in the channel browser is saved to `user.ini` (`LastGroup=`) whenever it changes; restored automatically when the same playlist loads on next launch; falls back to *ALL CHANNELS* if the group no longer exists
-- **New keyboard shortcuts** — `A` cycles aspect ratio, `S` cycles audio track, `T` cycles subtitle track; all three added to the help dialog
-- **FAVOURITES (MOST VIEWED)** — group renamed; a *✕ Clear Favourites* entry is always shown at the bottom of the list; selecting it prompts for confirmation before clearing all play counts for that playlist from `user.ini`
-- **English / Spanish UI** — language toggle button (EN / ES) in the toolbar; all button labels, context menu items, and feedback messages are translated; preference saved to `user.ini` as `Language=en/es`
-- **Help dialog** — press `H`, click the Help button, or use the right-click menu to open a keyboard shortcuts reference (language-aware)
+- **Recording scheduler** - pressing `R` now opens a dialog instead of immediately starting; choose *Start Now* or a scheduled date/time (`yyyy-MM-dd HH:mm` text input); optional fixed duration (hours + minutes, stops automatically); optional *Close app when done*; pending schedule shown in the REC button label (`⏳ REC HH:mm`); clicking `R` again while scheduled cancels it
+- **Last group restored on startup** - the selected TV group in the channel browser is saved to `user.ini` (`LastGroup=`) whenever it changes; restored automatically when the same playlist loads on next launch; falls back to *ALL CHANNELS* if the group no longer exists
+- **New keyboard shortcuts** - `A` cycles aspect ratio, `S` cycles audio track, `T` cycles subtitle track; all three added to the help dialog
+- **FAVOURITES (MOST VIEWED)** - group renamed; a *✕ Clear Favourites* entry is always shown at the bottom of the list; selecting it prompts for confirmation before clearing all play counts for that playlist from `user.ini`
+- **English / Spanish UI** - language toggle button (EN / ES) in the toolbar; all button labels, context menu items, and feedback messages are translated; preference saved to `user.ini` as `Language=en/es`
+- **Help dialog** - press `H`, click the Help button, or use the right-click menu to open a keyboard shortcuts reference (language-aware)
 - **Right-click context menu expanded**:
-  - *Next / Reset Aspect Ratio* — cycles through VLC-supported ratios (1:1, 4:3, 16:9, 16:10, 2.21:1, 2.35:1, 2.39:1, 5:4)
-  - *Next Audio Track* — rotates through available audio tracks
-  - *Set Volume* submenu — presets: 0 / 10 / 25 / 50 / 75 / 100 / 150 / 200 %
+  - *Next / Reset Aspect Ratio* - cycles through VLC-supported ratios (1:1, 4:3, 16:9, 16:10, 2.21:1, 2.35:1, 2.39:1, 5:4)
+  - *Next Audio Track* - rotates through available audio tracks
+  - *Set Volume* submenu - presets: 0 / 10 / 25 / 50 / 75 / 100 / 150 / 200 %
   - *(Un)Mute Audio*
-  - *Next Subtitles Track* — enables subtitles if disabled, then cycles tracks
+  - *Next Subtitles Track* - enables subtitles if disabled, then cycles tracks
   - *Disable Subtitles*
   - *Help (H)*
   - All actions show feedback in the status bar (windowed) or the top-right overlay (fullscreen)
-- **`RemoveDuplicateChannels` setting** — enabled by default; uses a single-pass `HashSet<string>` in the parser for O(n) deduplication; key is auto-written to `user.ini` on first save if absent
+- **`RemoveDuplicateChannels` setting** - enabled by default; uses a single-pass `HashSet<string>` in the parser for O(n) deduplication; key is auto-written to `user.ini` on first save if absent
 
 ### 2026-05-23 (earlier)
 
-- **FAVOURITES group** — channels you have played are automatically ranked by play count; shown at the top of the group selector; per-playlist counts stored in `[Favs_<sha256hash>]` sections in `user.ini` (credential-safe hashing)
-- **Copy stream URL** — right-click → *Copy Stream URL* copies the active stream URL to the clipboard
-- **Right-click cursor fix** — VLC hid the system cursor over the video; cursor is now restored before the context menu appears
-- **Title bar** format: `AzIPTV — Playlist — Channel — W×H@FPS`; updates are debounced (1.5 s) to avoid performance overhead
+- **FAVOURITES group** - channels you have played are automatically ranked by play count; shown at the top of the group selector; per-playlist counts stored in `[Favs_<sha256hash>]` sections in `user.ini` (credential-safe hashing)
+- **Copy stream URL** - right-click → *Copy Stream URL* copies the active stream URL to the clipboard
+- **Right-click cursor fix** - VLC hid the system cursor over the video; cursor is now restored before the context menu appears
+- **Title bar** format: `AzIPTV - Playlist - Channel - W×H@FPS`; updates are debounced (1.5 s) to avoid performance overhead
 - **ESC key** exits fullscreen even when no panel is open
-- **Channel name on startup** — restored from the loaded playlist when resuming the last stream
-- **Recording overwrite fix** — segments are now named `rec_…_001.ts`, `_002.ts`, etc.; existing files are never overwritten on retry
+- **Channel name on startup** - restored from the loaded playlist when resuming the last stream
+- **Recording overwrite fix** - segments are now named `rec_…_001.ts`, `_002.ts`, etc.; existing files are never overwritten on retry
 - **Circuit-breaker** skips `Stop()` during an active recording so the recording continues uninterrupted
 - `MaxConsecutiveFails` raised from 10 → 1000 (effectively disables the hard stop for stable streams)
 
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).

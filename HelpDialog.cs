@@ -15,7 +15,7 @@ public sealed class HelpDialog : Window
     public HelpDialog(string lang)
     {
         bool es = lang == "es";
-        Title                 = es ? "AzIPTV \u2014 Atajos de Teclado" : "AzIPTV \u2014 Keyboard Shortcuts";
+        Title                 = es ? "AzIPTV - Atajos de Teclado" : "AzIPTV - Keyboard Shortcuts";
         Width                 = 490;
         SizeToContent         = SizeToContent.Height;
         CanResize             = false;
@@ -34,13 +34,13 @@ public sealed class HelpDialog : Window
             ("R",            "Record / Stop recording",      "Grabar / Stop"),
             ("M",            "Mute / Unmute",                "Silenciar / Activar"),
             ("H",            "Show this help",               "Mostrar ayuda"),
+            ("Q",            "Press again while message is visible to quit",   "Pulsa otra vez mientras el mensaje este visible para salir"),
             ("A",            "Next aspect ratio",            "Siguiente relaci\u00f3n aspecto"),
             ("S",            "Next audio track",             "Siguiente pista de audio"),
             ("T",            "Next subtitle track",          "Siguiente subt\u00edtulo"),
             ("\u2190 / \u2192", "Seek \u22125 s / +5 s (VOD)", "Retroceder / avanzar 5 s (VOD)"),
-            ("\u2191 / \u2193", "Volume +5% / \u22125%",      "Volumen +5% / \u22125%"),
-            ("Num +",        "Volume +5%",                   "Volumen +5%"),
-            ("Num \u2212",   "Volume \u22125%",              "Volumen \u22125%"),
+            ("\u2191 / Num +", "Volume +5%",                   "Volumen +5%"),
+            ("\u2193 / Num \u2212", "Volume \u22125%",              "Volumen \u22125%"),
             ("Scroll wheel", "Adjust volume",                "Ajustar volumen"),
             ("Middle click", "Toggle mute",                  "Silenciar"),
             ("Double click", "Toggle fullscreen",            "Pantalla completa"),
