@@ -8,7 +8,7 @@ Download: <a href="https://github.com/azraelpc/aziptv/releases">https://github.c
 
 ## Features
 
-- **M3U / M3U8 playlist support** - load from a URL or a local file; 
+- **M3U / M3U8 playlist support** - load from a URL or a local file
 - **Channel browser** - side panel with full-text search and group (TV category) filter
 - **Search sorting behavior** - when the Search box contains text, matching channels are shown in alphabetical order; with an empty Search box, channels keep the playlist's original/default order
 - **FAVOURITES (MOST VIEWED) group** - channels you have played at least once are automatically ranked by play count at the top of the group list; counts are stored per-playlist in `user.ini`; a **Clear Favourites** entry at the bottom of the list resets all counters (with confirmation)
