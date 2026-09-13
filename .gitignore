@@ -1,4 +1,5 @@
 ## .NET / MSBuild
+cache/
 bin/
 obj/
 *.user

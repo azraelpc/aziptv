@@ -143,6 +143,8 @@ public partial class MainWindow : Window
         // Avalonia forces all Popups to be system-topmost which we don't want.
         SidePanelPopup.Opened    += OnSidePanelPopupOpened;
         RecIndicatorPopup.Opened += OnRecIndicatorPopupOpened;
+        NowPlayingPopup.Opened   += OnNowPlayingPopupOpened;
+        StreamInfoPopup.Opened   += OnStreamInfoPopupOpened;
 
         // Wire seek bar pointer events so drag doesn't fight the position timer.
         // Use AddHandler with handledEventsToo:true because Avalonia's Slider marks
@@ -1482,6 +1484,35 @@ public partial class MainWindow : Window
                     NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
         }
         catch (Exception ex) { AppLogger.LogException("RecIndicatorPopup.Opened", ex); }
+    }
+
+    private void OnNowPlayingPopupOpened(object? sender, EventArgs e)
+    {
+        // Same fix for now-playing overlay: keep it above our player surface,
+        // but never above unrelated apps unless the main window itself is topmost.
+        try
+        {
+            var hwnd = TopLevel.GetTopLevel(NowPlayingText)?.TryGetPlatformHandle()?.Handle;
+            if (hwnd.HasValue && hwnd.Value != IntPtr.Zero)
+                NativeMethods.SetWindowPos(hwnd.Value, NativeMethods.HWND_NOTOPMOST,
+                    0, 0, 0, 0,
+                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+        }
+        catch (Exception ex) { AppLogger.LogException("NowPlayingPopup.Opened", ex); }
+    }
+
+    private void OnStreamInfoPopupOpened(object? sender, EventArgs e)
+    {
+        // Same fix for stream-info overlay so it does not float above other apps.
+        try
+        {
+            var hwnd = TopLevel.GetTopLevel(StreamInfoText)?.TryGetPlatformHandle()?.Handle;
+            if (hwnd.HasValue && hwnd.Value != IntPtr.Zero)
+                NativeMethods.SetWindowPos(hwnd.Value, NativeMethods.HWND_NOTOPMOST,
+                    0, 0, 0, 0,
+                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+        }
+        catch (Exception ex) { AppLogger.LogException("StreamInfoPopup.Opened", ex); }
     }
     private void OnVideoSingleTapped()
     {

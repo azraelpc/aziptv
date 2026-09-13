@@ -14,6 +14,7 @@ Download: <a href="https://github.com/azraelpc/aziptv/releases">https://github.c
 - **FAVOURITES (MOST VIEWED) group** - channels you have played at least once are automatically ranked by play count at the top of the group list; counts are stored per-playlist in `user.ini`; a **Clear Favourites** entry at the bottom of the list resets all counters (with confirmation)
 - **Keyboard-first navigation** - move through the channel list, search box, and group picker entirely from the keyboard
 - **URL history** - save and name your favourite playlists; window title shows the active playlist name
+- **URL playlist disk cache** - URL playlists are cached in a local `cache` folder (one file per playlist URL hash). On next load, the app compares remote `Content-Length` with the cached file size and skips re-download when unchanged; if download fails and cache exists, the cached copy is used
 - **Playlist manager dialog** - *Load URL* now opens a saved-playlists manager (double-click or **Load** to open, **Edit** for saved entries, and **Add IPTV M3U playlist** to save name+URL)
 - **Volume control** - mouse wheel, numpad `+`/`-`, or `M` to mute; overlay shows the current level in both windowed and fullscreen modes
 - **Arrow-key volume** - when no interactive panel/control is active, `↑` / `↓` act as volume `+5%` / `−5%`
@@ -29,8 +30,8 @@ Download: <a href="https://github.com/azraelpc/aziptv/releases">https://github.c
 - **Audio & subtitle track selection** - cycle tracks or disable subtitles from the right-click menu
 - **Volume preset submenu** - set volume to 0 / 10 / 25 / 50 / 75 / 100 / 150 / 200 % via right-click
 - **Copy stream URL** - copy the current stream URL to clipboard from the right-click menu
-- **Stream info overlay** - press `I` to show video/audio codec, resolution, fps, bitrate, and channel info over the video; auto-hides after 10 seconds or dismiss manually
-- **Now-playing overlay** - when playback starts (and also when pressing `I`), a top-right popup shows **Playing:** with channel logo + channel name
+- **Stream info overlay** - press `I` to show video/audio codec, resolution, fps, bitrate, and channel info over the video; auto-hides after 10 seconds or dismiss manually. Overlay popups are constrained to the player window and are not forced as system-wide always-on-top windows
+- **Now-playing overlay** - when playback starts (and also when pressing `I`), a top-right popup shows **Playing:** with channel logo + channel name; it stays as an in-app overlay instead of floating above unrelated applications
 - **Football TV Guide** - right-click context menu opens `https://liveonsat.com/2day.php` in the default browser
 - **Keyboard shortcuts help** - press `H` or use the Help button for a full shortcut reference
 - **Quick quit shortcut** - press `Q` once to show a 5-second confirmation message; the app only quits if you press `Q` again while that message is still visible. Changing `EN/ES` restarts the same 5-second confirmation in the new language
@@ -108,6 +109,8 @@ dotnet run
 Settings and URL history are saved to `user.ini` next to the executable.  
 This file is excluded from version control (see [`.gitignore`](.gitignore)).
 
+URL playlist cache files are stored in a sibling `cache` folder next to the executable. Cache files are named `playlist_<hash>.m3u8` and can be safely deleted; they will be recreated as needed.
+
 | Key | Description | Default |
 |-----|-------------|---------|
 | `Theme` | `Dark` or `Light` | `Dark` |
@@ -148,6 +151,12 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 ## Changelog
 
 ### 2026-09-13
+
+**Nota (ES):** Las listas cargadas desde URL ahora se guardan en la carpeta cache para acelerar cargas futuras (si el tamaño remoto no cambia, no se vuelve a descargar). Ademas, los overlays de Playing e Info (tecla I) ya no quedan como always-on-top global: se muestran solo sobre la ventana del reproductor.
+
+- **URL playlist cache folder** - added on-disk cache in `cache/` for URL playlists (`playlist_<hash>.m3u8`), with size-based validation against remote `Content-Length` and offline fallback to cached copy when network download fails
+- **Now-playing overlay z-order fix** - the **Playing:** popup no longer stays system-topmost; it now behaves as a player overlay only
+- **Stream info overlay z-order fix** - the `I` info popup no longer stays system-topmost; it now behaves as a player overlay only
 
 - **Now-playing popup (top-right)** - when playback starts (manual or automatic), a top-right popup shows **Playing:** plus channel logo + channel name; size increased for better readability
 - **Toolbar WEB / Update button** - added **WEB** button that opens `https://github.com/azraelpc/aziptv/`; background GitHub release check switches it to **Update!** (opens releases page) when a newer version is found

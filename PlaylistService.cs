@@ -25,6 +25,9 @@ public static class PlaylistService
     private static string IniPath =>
         Path.Combine(AppContext.BaseDirectory, "user.ini");
 
+    private static string CacheDir =>
+        Path.Combine(AppContext.BaseDirectory, "cache");
+
     // ── Load ─────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -33,15 +36,40 @@ public static class PlaylistService
     /// </summary>
     public static async Task<ParseResult> LoadFromUrlAsync(string url, IProgress<ParseProgressUpdate>? progress = null)
     {
-        using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
-        using var src = await response.Content.ReadAsStreamAsync();
-        if (response.Content.Headers.ContentLength is long len && len > 0)
+        var cachePath = GetUrlCachePath(url);
+        var hasCache = File.Exists(cachePath);
+        var localSize = hasCache ? new FileInfo(cachePath).Length : -1L;
+        var remoteSize = await TryGetRemoteContentLengthAsync(url);
+
+        // Reuse local cache only when server reports the same length.
+        if (hasCache && remoteSize is long size && size > 0 && size == localSize)
         {
-            using var tracked = new ProgressReadStream(src, len);
-            return await M3uParser.ParseAsync(tracked, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+            using var cached = File.OpenRead(cachePath);
+            return await M3uParser.ParseAsync(cached, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
         }
-        return await M3uParser.ParseAsync(src, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+
+        try
+        {
+            using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            TryWriteCacheFile(cachePath, bytes);
+
+            using var src = new MemoryStream(bytes, writable: false);
+            if (bytes.LongLength > 0)
+            {
+                using var tracked = new ProgressReadStream(src, bytes.LongLength);
+                return await M3uParser.ParseAsync(tracked, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+            }
+            return await M3uParser.ParseAsync(src, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+        }
+        catch when (hasCache)
+        {
+            // Offline/server-failure fallback: use last cached version if available.
+            using var cached = File.OpenRead(cachePath);
+            return await M3uParser.ParseAsync(cached, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+        }
     }
 
     public static async Task<ParseResult> LoadFromFileAsync(string path, IProgress<ParseProgressUpdate>? progress = null)
@@ -423,6 +451,39 @@ public static class PlaylistService
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private static string GetUrlCachePath(string url) =>
+        Path.Combine(CacheDir, $"playlist_{GetPlaylistId(url)}.m3u8");
+
+    private static async Task<long?> TryGetRemoteContentLengthAsync(string url)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Head, url);
+            using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+            if (!resp.IsSuccessStatusCode) return null;
+            return resp.Content.Headers.ContentLength;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void TryWriteCacheFile(string cachePath, byte[] bytes)
+    {
+        try
+        {
+            Directory.CreateDirectory(CacheDir);
+            var tempPath = cachePath + ".tmp";
+            File.WriteAllBytes(tempPath, bytes);
+            File.Move(tempPath, cachePath, overwrite: true);
+        }
+        catch
+        {
+            // Cache write failures should not block playback.
+        }
+    }
 
     private static string Encode(string value) =>
         string.IsNullOrEmpty(value)
