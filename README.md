@@ -38,7 +38,7 @@ Download: <a href="https://github.com/azraelpc/aziptv/releases">https://github.c
 - **Quick quit shortcut** - press `Q` once to show a 5-second confirmation message; the app only quits if you press `Q` again while that message is still visible. Changing `EN/ES` restarts the same 5-second confirmation in the new language
 - **Help dialog quick-close** - while the Help popup is open, pressing any key closes it
 - **English / Spanish UI** - switch language with the flag button; preference is saved in `user.ini`
-- **WEB / Update button** - toolbar **WEB** button opens project page; if a newer GitHub release is detected, it changes to **Update!** and opens the releases page
+- **WEB / Update button** - toolbar **WEB** button opens project page; if a newer GitHub release is detected, it changes to **Update!** and opens the releases page. Version comparison supports numeric tags and optional letter suffixes such as `v1.1.1a`, `v1.1.1c`, and `v1.1.2`
 - **Native splash + startup UX** - splash is taskbar-integrated with app icon; startup defers heavy playback init and improves channel-loading status/error messaging
 
 ## Requirements
@@ -147,7 +147,6 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 - EPG Helper (map Movistar or similar list's channels to m3u list channel and proxy).
 - When EPG Helper is ready: show EPG + codec and resolution info in the UI.
 - Keep the focus on the player, not the buttons, (only) when the button was selected with mouse (not when used keyboard).
-- Show full url in stream info (key i) it's currently trimmed. Allow to copy URL in the Playlist list.
 
 ---
 
@@ -186,6 +185,7 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 - **Filtered search ordering** - channel results are now alphabetically sorted only while a search term is active; normal browsing still preserves the playlist order
 - **Quick quit hotkey** - added player-only `Q` handling that only exits while the on-screen confirmation message is still visible; changing `EN/ES` relocalizes the message and restarts the 5-second window
 - **VLC user-agent on playlist probes** - playlist and text-based stream validation requests now explicitly use `User-Agent: VLC` for better compatibility with some providers
+- **Suffix-aware update detection** - GitHub release version parsing and comparison now support optional trailing letter suffixes, so tags like `v1.1.1c`, `v1.1.1d`, and `v1.1.2` are ordered correctly when deciding whether to show **Update!**
 
 ### 2026-05-24 (VOD + pause)
 

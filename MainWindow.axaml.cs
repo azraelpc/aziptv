@@ -475,7 +475,7 @@ public partial class MainWindow : Window
     {
         var match = Regex.Match(
             html,
-            @"/azraelpc/aziptv/releases/tag/(?<version>v?\d+(?:\.\d+){1,3})",
+            @"/azraelpc/aziptv/releases/tag/(?<version>v?\d+(?:\.\d+){1,3}[a-z]*)",
             RegexOptions.IgnoreCase);
         return match.Success ? match.Groups["version"].Value : null;
     }
@@ -484,17 +484,61 @@ public partial class MainWindow : Window
     {
         if (!TryParseVersion(candidate, out var candidateVersion)) return false;
         if (!TryParseVersion(current, out var currentVersion)) return false;
-        return candidateVersion > currentVersion;
+        return CompareVersions(candidateVersion, currentVersion) > 0;
     }
 
-    private static bool TryParseVersion(string raw, out Version version)
+    private static int CompareVersions(ParsedVersion left, ParsedVersion right)
     {
-        version = new Version();
+        for (int i = 0; i < left.Parts.Length; i++)
+        {
+            var partCompare = left.Parts[i].CompareTo(right.Parts[i]);
+            if (partCompare != 0)
+                return partCompare;
+        }
+
+        return left.SuffixRank.CompareTo(right.SuffixRank);
+    }
+
+    private static bool TryParseVersion(string raw, out ParsedVersion version)
+    {
+        version = default;
         var normalized = raw.Trim();
         if (normalized.StartsWith("v", StringComparison.OrdinalIgnoreCase))
             normalized = normalized[1..];
-        return Version.TryParse(normalized, out version!);
+
+        var match = Regex.Match(normalized, @"^(?<main>\d+(?:\.\d+){1,3})(?<suffix>[a-z]*)$", RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return false;
+
+        var split = match.Groups["main"].Value.Split('.');
+        var parts = new int[4];
+        for (int i = 0; i < split.Length; i++)
+        {
+            if (!int.TryParse(split[i], out parts[i]))
+                return false;
+        }
+
+        version = new ParsedVersion(parts, ParseSuffixRank(match.Groups["suffix"].Value));
+        return true;
     }
+
+    private static int ParseSuffixRank(string suffix)
+    {
+        if (string.IsNullOrWhiteSpace(suffix))
+            return 0;
+
+        var rank = 0;
+        foreach (var ch in suffix.Trim().ToLowerInvariant())
+        {
+            if (ch is < 'a' or > 'z')
+                return 0;
+            rank = checked((rank * 26) + (ch - 'a' + 1));
+        }
+
+        return rank;
+    }
+
+    private readonly record struct ParsedVersion(int[] Parts, int SuffixRank);
 
     private static void OpenExternalUrl(string url)
     {
