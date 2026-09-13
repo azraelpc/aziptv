@@ -6,6 +6,7 @@ using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using System;
+using System.Threading.Tasks;
 
 namespace AzIPTV;
 
@@ -48,6 +49,7 @@ public partial class UrlInputDialog : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(170, GridUnitType.Pixel)));
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
         grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
         if (!isFixed)
             grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
         if (!isFixed)
@@ -81,11 +83,17 @@ public partial class UrlInputDialog : Window
         Grid.SetColumn(loadBtn, 2);
         grid.Children.Add(loadBtn);
 
+        var copyBtn = MakeActionButton("Copy");
+        ToolTip.SetTip(copyBtn, "Copy URL");
+        copyBtn.Click += async (_, _) => await CopyUrlToClipboardAsync(url);
+        Grid.SetColumn(copyBtn, 3);
+        grid.Children.Add(copyBtn);
+
         if (!isFixed)
         {
             var editBtn = MakeActionButton("Edit");
             editBtn.Click += async (_, _) => await EditEntryAsync(url, name);
-            Grid.SetColumn(editBtn, 3);
+            Grid.SetColumn(editBtn, 4);
             grid.Children.Add(editBtn);
 
             var delBtn = new Button
@@ -103,7 +111,7 @@ public partial class UrlInputDialog : Window
                 PlaylistService.RemoveUrlFromHistory(url);
                 PopulateHistory();
             };
-            Grid.SetColumn(delBtn, 4);
+            Grid.SetColumn(delBtn, 5);
             grid.Children.Add(delBtn);
         }
 
@@ -139,6 +147,11 @@ public partial class UrlInputDialog : Window
 
         PlaylistService.SaveUrlHistoryEntry(originalUrl, entry.Url, entry.Name);
         PopulateHistory();
+    }
+
+    private async Task CopyUrlToClipboardAsync(string url)
+    {
+        await (TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(url) ?? Task.CompletedTask);
     }
 
     private static Button MakeActionButton(string text)

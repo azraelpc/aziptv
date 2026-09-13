@@ -14,8 +14,8 @@ Download: <a href="https://github.com/azraelpc/aziptv/releases">https://github.c
 - **FAVOURITES (MOST VIEWED) group** - channels you have played at least once are automatically ranked by play count at the top of the group list; counts are stored per-playlist in `user.ini`; a **Clear Favourites** entry at the bottom of the list resets all counters (with confirmation)
 - **Keyboard-first navigation** - move through the channel list, search box, and group picker entirely from the keyboard
 - **URL history** - save and name your favourite playlists; window title shows the active playlist name
-- **URL playlist disk cache** - URL playlists are cached in a local `cache` folder (one file per playlist URL hash). On next load, the app compares remote `Content-Length` with the cached file size and skips re-download when unchanged; if download fails and cache exists, the cached copy is used
-- **Playlist manager dialog** - *Load URL* now opens a saved-playlists manager (double-click or **Load** to open, **Edit** for saved entries, and **Add IPTV M3U playlist** to save name+URL)
+- **URL playlist disk cache** - URL playlists are cached in a local `cache` folder (one file per playlist URL hash). On next load, the app compares remote `Content-Length` with the cached file size and skips re-download when unchanged; if download fails and cache exists, the cached copy is used. Invalid server responses are rejected before cache overwrite, so a bad or blocked response does not replace a previously valid cached playlist
+- **Playlist manager dialog** - *Load URL* now opens a saved-playlists manager (double-click or **Load** to open, **Copy** to copy the playlist URL, **Edit** for saved entries, and **Add IPTV M3U playlist** to save name+URL)
 - **Volume control** - mouse wheel, numpad `+`/`-`, or `M` to mute; overlay shows the current level in both windowed and fullscreen modes
 - **Arrow-key volume** - when no interactive panel/control is active, `↑` / `↓` act as volume `+5%` / `−5%`
 - **Always-on-top** - pin the window above other apps
@@ -30,7 +30,8 @@ Download: <a href="https://github.com/azraelpc/aziptv/releases">https://github.c
 - **Audio & subtitle track selection** - cycle tracks or disable subtitles from the right-click menu
 - **Volume preset submenu** - set volume to 0 / 10 / 25 / 50 / 75 / 100 / 150 / 200 % via right-click
 - **Copy stream URL** - copy the current stream URL to clipboard from the right-click menu
-- **Stream info overlay** - press `I` to show video/audio codec, resolution, fps, bitrate, and channel info over the video; auto-hides after 10 seconds or dismiss manually. Overlay popups are constrained to the player window and are not forced as system-wide always-on-top windows
+- **Invalid playlist / channel guard** - if a downloaded playlist or text-based stream response is clearly invalid (too short or contains a known blocked/unavailable page message), playback is stopped and a centered in-app `Playlist not available at this moment. Try again later` warning is shown for 8 seconds; the warning is not system-wide always-on-top
+- **Stream info overlay** - press `I` to show video/audio codec, resolution, fps, bitrate, and channel info over the video, including the full active stream URL; auto-hides after 10 seconds or dismiss manually. Overlay popups are constrained to the player window and are not forced as system-wide always-on-top windows
 - **Now-playing overlay** - when playback starts (and also when pressing `I`), a top-right popup shows **Playing:** with channel logo + channel name; it stays as an in-app overlay instead of floating above unrelated applications
 - **Football TV Guide** - right-click context menu opens `https://liveonsat.com/2day.php` in the default browser
 - **Keyboard shortcuts help** - press `H` or use the Help button for a full shortcut reference
@@ -80,7 +81,7 @@ dotnet run
 | `T` | Next subtitle track |
 | `←` / `→` | Seek −5 s / +5 s (VOD only - additive, commits after 800 ms) |
 | `R` | Open recording scheduler (start now or scheduled, optional duration + auto-close) |
-| `I` | Show stream info overlay (codec, resolution, fps, audio, playlist - 10 s, click, or press `I` again to dismiss); also shows now-playing popup |
+| `I` | Show stream info overlay (codec, resolution, fps, audio, playlist, full URL - 10 s, click, or press `I` again to dismiss); also shows now-playing popup |
 | `M` | Mute / Unmute |
 | `H` | Show keyboard shortcuts help |
 | `Q` | Press once to show quit confirmation; press again while the message is still visible to quit |
@@ -109,7 +110,7 @@ dotnet run
 Settings and URL history are saved to `user.ini` next to the executable.  
 This file is excluded from version control (see [`.gitignore`](.gitignore)).
 
-URL playlist cache files are stored in a sibling `cache` folder next to the executable. Cache files are named `playlist_<hash>.m3u8` and can be safely deleted; they will be recreated as needed.
+URL playlist cache files are stored in a sibling `cache` folder next to the executable. Cache files are named `playlist_<hash>.m3u8` and can be safely deleted; they will be recreated as needed. If a newly-downloaded playlist response is invalid, the cache file is left untouched.
 
 | Key | Description | Default |
 |-----|-------------|---------|
@@ -169,8 +170,12 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 - **Live loading progress** - while parsing large playlists, status and side panel show loaded channels + percentage (e.g. `Loading channels list: NAME (25000 - 50%)`); in Spanish UI this is localized automatically (`Cargando lista de canales: NAME (25000 - 50%)`)
 - **Sidebar loading placeholder** - when channel list is still empty during load, side panel now shows a centered loading placeholder message
 - **Concise playlist download errors** - URL download failures are now summarized in one line (e.g. `Error: Can't download playlist ...: Error 404.`) instead of full exception blocks
+- **Concise HTTP auth/playback probe errors** - playback-side HTTP failures such as `401` are now also reduced to a single line instead of logging a full exception block
+- **Invalid playlist guard** - downloaded playlists are rejected when they are clearly blocked/unavailable pages or too short to be valid M3U content; rejected URL downloads no longer overwrite the existing on-disk cache
+- **Centered unavailable message** - invalid playlist/text-stream responses now stop playback and show `Playlist not available at this moment. Try again later` centered over the player for 8 seconds without forcing a system-wide topmost window
 - **Channel identity persistence** - app now saves/restores last channel name (`LastChannelName`) so startup labels use channel name instead of URL host fallback
-- **Stream info enhancements (`I`)** - stream info overlay now includes playlist name (when available) between channel and URL, and opening stream info also triggers now-playing popup
+- **Stream info enhancements (`I`)** - stream info overlay now includes playlist name (when available), shows the full active URL without trimming, and opening stream info also triggers now-playing popup
+- **Saved playlist URL copy** - the *Load URL* playlist manager now has a per-row **Copy** action to copy any saved or built-in playlist URL to the clipboard
 - **Help popup behavior** - `H` acts as open/close toggle from main window context; once Help is open, pressing any key closes it immediately
 - **Keyboard shortcuts** - added `↑ / ↓` volume shortcut behavior (when no interactive panel/control is active) and documented it in Help
 - **Channel-load progress format** - during playlist parsing, loading messages now show only loaded channel count + percent (`(N - X%)`) instead of a fluctuating estimated total
@@ -178,6 +183,7 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 - **HLS live/VOD classification fix** - `.m3u8` streams such as Pluto-style live channels are now checked via manifest contents and treated as live by default unless the playlist positively identifies itself as VOD, preventing false seek-bar/VOD behavior on many live feeds
 - **Filtered search ordering** - channel results are now alphabetically sorted only while a search term is active; normal browsing still preserves the playlist order
 - **Quick quit hotkey** - added player-only `Q` handling that only exits while the on-screen confirmation message is still visible; changing `EN/ES` relocalizes the message and restarts the 5-second window
+- **VLC user-agent on playlist probes** - playlist and text-based stream validation requests now explicitly use `User-Agent: VLC` for better compatibility with some providers
 
 ### 2026-05-24 (VOD + pause)
 

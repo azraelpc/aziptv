@@ -24,8 +24,8 @@ public partial class MainWindow : Window
 {
     private const string ProjectWebsiteUrl = "https://github.com/azraelpc/aziptv/";
     private const string ProjectReleasesUrl = "https://github.com/azraelpc/aziptv/releases";
-    private static readonly HttpClient UpdateHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
-    private static readonly HttpClient HlsProbeHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private static readonly HttpClient UpdateHttp = CreateHttpClient(timeoutSeconds: 10);
+    private static readonly HttpClient HlsProbeHttp = CreateHttpClient(timeoutSeconds: 10, useVlcUserAgent: true);
 
     private string _currentUrl = string.Empty;
     private string _currentChannelName = string.Empty;
@@ -74,9 +74,11 @@ public partial class MainWindow : Window
     private int              _volume  = 100;
     private bool             _isMuted = false;
     private DispatcherTimer? _volumeOverlayTimer;
+    private DispatcherTimer? _centeredMessageTimer;
     private DispatcherTimer? _nowPlayingTimer;
     private DispatcherTimer? _titleUpdateTimer;
     private int              _nowPlayingRequestId;
+    private int              _playAttemptId;
 
     // VOD seek bar (additive Netflix model)
     private DispatcherTimer? _positionTimer;
@@ -95,6 +97,14 @@ public partial class MainWindow : Window
     // UI language ("en" or "es") + inline translation helper.
     private string _uiLang = "en";
     private string T(string en, string es) => _uiLang == "es" ? es : en;
+
+    private static HttpClient CreateHttpClient(int timeoutSeconds, bool useVlcUserAgent = false)
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
+        if (useVlcUserAgent)
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("VLC");
+        return client;
+    }
 
     public MainWindow()
     {
@@ -145,6 +155,7 @@ public partial class MainWindow : Window
         RecIndicatorPopup.Opened += OnRecIndicatorPopupOpened;
         NowPlayingPopup.Opened   += OnNowPlayingPopupOpened;
         StreamInfoPopup.Opened   += OnStreamInfoPopupOpened;
+        CenteredMessagePopup.Opened += OnCenteredMessagePopupOpened;
 
         // Wire seek bar pointer events so drag doesn't fight the position timer.
         // Use AddHandler with handledEventsToo:true because Avalonia's Slider marks
@@ -354,6 +365,7 @@ public partial class MainWindow : Window
                 totalSw.Stop();
                 AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
             }
+            catch (InvalidM3uContentException ex) { HandleUnavailablePlaylistContent(ex, listTitle); }
             catch (Exception ex) { AppLogger.Log(BuildPlaylistDownloadErrorMessage(ex, listTitle)); }
             finally { SetLoadingState(false); }
         }
@@ -377,6 +389,7 @@ public partial class MainWindow : Window
                 totalSw.Stop();
                 AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
             }
+            catch (InvalidM3uContentException ex) { HandleUnavailablePlaylistContent(ex, listTitle); }
             catch (Exception ex) { AppLogger.LogException("startup playlist file", ex); }
             finally { SetLoadingState(false); }
         }
@@ -402,6 +415,7 @@ public partial class MainWindow : Window
                 totalSw.Stop();
                 AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
             }
+            catch (InvalidM3uContentException ex) { HandleUnavailablePlaylistContent(ex, listTitle); }
             catch (Exception ex) { AppLogger.Log(BuildPlaylistDownloadErrorMessage(ex, listTitle)); }
             finally { SetLoadingState(false); }
         }
@@ -537,6 +551,15 @@ public partial class MainWindow : Window
         return message.EndsWith('.') ? message : message + ".";
     }
 
+    private string BuildPlaybackRequestErrorMessage(Exception ex, string? label)
+    {
+        var target = string.IsNullOrWhiteSpace(label)
+            ? T("channel", "canal")
+            : label;
+        return T($"Playback error: {target}: {DescribeDownloadError(ex)}",
+                 $"Error de reproduccion: {target}: {DescribeDownloadError(ex)}");
+    }
+
     private string BuildLoadingChannelsMessage(string? listTitle, string? progressText = null)
         => string.IsNullOrWhiteSpace(listTitle)
             ? T($"Loading channels{progressText}...", $"Cargando canales{progressText}...")
@@ -594,14 +617,32 @@ public partial class MainWindow : Window
     private void PlayStream()
     {
         if (_libVlc is null || _mediaPlayer is null || string.IsNullOrEmpty(_currentUrl)) return;
-        var label = string.IsNullOrEmpty(_currentChannelName) ? UrlForDisplay(_currentUrl) : _currentChannelName;
-        AppLogger.Log(T($"Playing: {label}", $"Reproduciendo: {label}"));
+        var libVlc = _libVlc;
+        var mediaPlayer = _mediaPlayer;
+        var playUrl = _currentUrl;
+        var playLabel = string.IsNullOrEmpty(_currentChannelName) ? UrlForDisplay(playUrl) : _currentChannelName;
+        var playAttemptId = ++_playAttemptId;
+        AppLogger.Log(T($"Playing: {playLabel}", $"Reproduciendo: {playLabel}"));
         try
         {
             ResetPlaybackKindState();
-            _ = ProbeCurrentStreamKindAsync(_currentUrl);
+            _ = StartPlaybackAsync(libVlc, mediaPlayer, playUrl, playLabel, playAttemptId);
+        }
+        catch (Exception ex) { AppLogger.LogException("PlayStream", ex); }
+    }
+
+    private async Task StartPlaybackAsync(LibVLC libVlc, MediaPlayer mediaPlayer, string url, string label, int playAttemptId)
+    {
+        try
+        {
+            await ValidateChannelContentAsync(url);
+
+            if (playAttemptId != _playAttemptId || !string.Equals(url, _currentUrl, StringComparison.Ordinal))
+                return;
+
+            _ = ProbeCurrentStreamKindAsync(url);
             _media?.Dispose();
-            _media = new Media(_libVlc, new Uri(_currentUrl));
+            _media = new Media(libVlc, new Uri(url));
             if (_isRecording && !string.IsNullOrEmpty(_recordingPath))
             {
                 var actualPath = GetUniqueRecordingPath(_recordingPath);
@@ -609,7 +650,20 @@ public partial class MainWindow : Window
                 _media.AddOption($":sout=#duplicate{{dst=display,dst=std{{access=file,mux=ts,dst={safePath}}}}}");
                 _media.AddOption(":sout-keep");
             }
-            _mediaPlayer.Play(_media);
+            PlaylistService.SaveLastStreamUrl(url);
+            PlaylistService.SaveLastChannelName(_currentChannelName);
+            PlaylistService.SaveLastChannelLogoUrl(_currentChannel?.LogoUrl ?? string.Empty);
+            mediaPlayer.Play(_media);
+        }
+        catch (InvalidM3uContentException ex)
+        {
+            if (playAttemptId == _playAttemptId && string.Equals(url, _currentUrl, StringComparison.Ordinal))
+                HandleUnavailablePlaylistContent(ex, label);
+        }
+        catch (HttpRequestException ex)
+        {
+            if (playAttemptId == _playAttemptId && string.Equals(url, _currentUrl, StringComparison.Ordinal))
+                AppLogger.Log(BuildPlaybackRequestErrorMessage(ex, label));
         }
         catch (Exception ex) { AppLogger.LogException("PlayStream", ex); }
     }
@@ -626,9 +680,6 @@ public partial class MainWindow : Window
             return;
         }
         _currentUrl = url;
-        PlaylistService.SaveLastStreamUrl(url);
-        PlaylistService.SaveLastChannelName(_currentChannelName);
-        PlaylistService.SaveLastChannelLogoUrl(_currentChannel?.LogoUrl ?? string.Empty);
         // Reset failure counter when the user explicitly changes channel.
         _consecutiveFails = 0;
         PlayStream();
@@ -1353,6 +1404,7 @@ public partial class MainWindow : Window
             totalSw.Stop();
             AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
         }
+        catch (InvalidM3uContentException ex) { HandleUnavailablePlaylistContent(ex, listTitle); }
         catch (Exception ex) { AppLogger.Log(BuildPlaylistDownloadErrorMessage(ex, listTitle)); }
         finally { SetLoadingState(false); }
     }
@@ -1392,6 +1444,7 @@ public partial class MainWindow : Window
             totalSw.Stop();
             AppLogger.Log(BuildPlaylistLoadedSummary(result.Channels.Count, listTitle, totalSw.Elapsed));
         }
+        catch (InvalidM3uContentException ex) { HandleUnavailablePlaylistContent(ex, listTitle); }
         catch (Exception ex) { AppLogger.LogException("LoadFromFile", ex); }
         finally { SetLoadingState(false); }
     }
@@ -1513,6 +1566,19 @@ public partial class MainWindow : Window
                     NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
         }
         catch (Exception ex) { AppLogger.LogException("StreamInfoPopup.Opened", ex); }
+    }
+
+    private void OnCenteredMessagePopupOpened(object? sender, EventArgs e)
+    {
+        try
+        {
+            var hwnd = TopLevel.GetTopLevel(CenteredMessageText)?.TryGetPlatformHandle()?.Handle;
+            if (hwnd.HasValue && hwnd.Value != IntPtr.Zero)
+                NativeMethods.SetWindowPos(hwnd.Value, NativeMethods.HWND_NOTOPMOST,
+                    0, 0, 0, 0,
+                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+        }
+        catch (Exception ex) { AppLogger.LogException("CenteredMessagePopup.Opened", ex); }
     }
     private void OnVideoSingleTapped()
     {
@@ -1772,6 +1838,29 @@ public partial class MainWindow : Window
         _volumeOverlayTimer.Start();
     }
 
+    private void ShowCenteredMessage(string text, double durationSeconds = 8)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => ShowCenteredMessage(text, durationSeconds));
+            return;
+        }
+
+        CenteredMessageText.Text = text;
+        if (!CenteredMessagePopup.IsOpen)
+            CenteredMessagePopup.Open();
+
+        _centeredMessageTimer?.Stop();
+        _centeredMessageTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(durationSeconds) };
+        _centeredMessageTimer.Tick += (_, _) =>
+        {
+            _centeredMessageTimer!.Stop();
+            _centeredMessageTimer = null;
+            CenteredMessagePopup.Close();
+        };
+        _centeredMessageTimer.Start();
+    }
+
     private async void ShowNowPlayingOverlay()
     {
         var channelName = string.IsNullOrWhiteSpace(_currentChannelName) ? UrlForDisplay(_currentUrl) : _currentChannelName;
@@ -1813,6 +1902,72 @@ public partial class MainWindow : Window
     {
         AppLogger.Log(msg);
         ShowVolumeOverlay(msg, durationSeconds);
+    }
+
+    private void HandleUnavailablePlaylistContent(InvalidM3uContentException ex, string? target)
+    {
+        _pendingFavouriteChannel = null;
+        _mediaPlayer?.Stop();
+
+        var targetLabel = string.IsNullOrWhiteSpace(target) ? "content" : target;
+        AppLogger.Log($"Playlist unavailable ({targetLabel}): {ex.Reason}");
+        ShowCenteredMessage("Playlist not available at this moment. Tebas? Try again later...", durationSeconds: 8);
+    }
+
+    private static async Task<byte[]> ReadProbeBytesAsync(Stream stream, int maxBytes)
+    {
+        var buffer = new byte[maxBytes];
+        var totalRead = 0;
+        while (totalRead < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(totalRead, buffer.Length - totalRead));
+            if (read <= 0)
+                break;
+
+            totalRead += read;
+            if (totalRead >= InvalidM3uContent.MinimumLength)
+                break;
+        }
+
+        if (totalRead == buffer.Length)
+            return buffer;
+
+        var result = new byte[totalRead];
+        Array.Copy(buffer, result, totalRead);
+        return result;
+    }
+
+    private static bool IsTextLikeMediaType(string? mediaType)
+    {
+        if (string.IsNullOrWhiteSpace(mediaType))
+            return false;
+
+        return mediaType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
+            || mediaType.Contains("mpegurl", StringComparison.OrdinalIgnoreCase)
+            || mediaType.Contains("json", StringComparison.OrdinalIgnoreCase)
+            || mediaType.Contains("xml", StringComparison.OrdinalIgnoreCase)
+            || mediaType.Contains("html", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task ValidateChannelContentAsync(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return;
+
+        if (!uri.Scheme.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        using var response = await HlsProbeHttp.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        var shouldProbeText = IsLikelyHlsUrl(url) || IsTextLikeMediaType(mediaType);
+        if (!shouldProbeText)
+            return;
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        var sample = await ReadProbeBytesAsync(stream, 4096);
+        InvalidM3uContent.EnsureValid(sample, url);
     }
 
     private void RequestQuitConfirmation()
@@ -1903,8 +2058,7 @@ public partial class MainWindow : Window
             sb.AppendLine($"List    : {playlistName}");
         if (!string.IsNullOrEmpty(_currentUrl))
         {
-            var url = _currentUrl.Length > 65 ? _currentUrl[..62] + "..." : _currentUrl;
-            sb.AppendLine($"URL     : {url}");
+            sb.AppendLine($"URL     : {_currentUrl}");
         }
 
         bool hasVideoTrack = false;

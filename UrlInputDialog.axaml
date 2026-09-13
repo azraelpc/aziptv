@@ -53,7 +53,7 @@
                 Margin="0,0,0,10">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="4,4" Spacing="4">
-                    <Grid ColumnDefinitions="170,*,Auto,Auto,Auto" Margin="4,2,4,6">
+                    <Grid ColumnDefinitions="170,*,Auto,Auto,Auto,Auto" Margin="4,2,4,6">
                         <TextBlock Grid.Column="0" Text="Playlist" FontSize="11" Foreground="{DynamicResource AppLabelFg}"/>
                         <TextBlock Grid.Column="1" Text="URL" FontSize="11" Foreground="{DynamicResource AppLabelFg}"/>
                     </Grid>

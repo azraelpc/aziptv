@@ -46,7 +46,7 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="*,Auto,Auto">
+    <Grid x:Name="RootGrid" RowDefinitions="*,Auto,Auto">
 
         <!-- Video area: black background, VLC renders here -->
         <Grid x:Name="VideoGrid" Grid.Row="0" Background="#505050">
@@ -173,6 +173,25 @@
                            Foreground="White"
                            FontSize="15"
                            FontWeight="SemiBold" />
+            </Border>
+        </Popup>
+
+        <Popup x:Name="CenteredMessagePopup"
+               Grid.Row="0"
+             Placement="Center"
+               PlacementTarget="{Binding ElementName=RootGrid}"
+               Topmost="False"
+               IsLightDismissEnabled="False">
+            <Border Background="#DD101010"
+                    CornerRadius="10"
+                    Padding="24,16"
+                    MaxWidth="460">
+                <TextBlock x:Name="CenteredMessageText"
+                           Foreground="White"
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
             </Border>
         </Popup>
 

@@ -43,10 +43,7 @@ public static class PlaylistService
 
         // Reuse local cache only when server reports the same length.
         if (hasCache && remoteSize is long size && size > 0 && size == localSize)
-        {
-            using var cached = File.OpenRead(cachePath);
-            return await M3uParser.ParseAsync(cached, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
-        }
+            return await LoadFromValidatedBytesAsync(await File.ReadAllBytesAsync(cachePath), cachePath, progress);
 
         try
         {
@@ -54,28 +51,21 @@ public static class PlaylistService
             response.EnsureSuccessStatusCode();
 
             var bytes = await response.Content.ReadAsByteArrayAsync();
+            InvalidM3uContent.EnsureValid(bytes, url);
             TryWriteCacheFile(cachePath, bytes);
 
-            using var src = new MemoryStream(bytes, writable: false);
-            if (bytes.LongLength > 0)
-            {
-                using var tracked = new ProgressReadStream(src, bytes.LongLength);
-                return await M3uParser.ParseAsync(tracked, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
-            }
-            return await M3uParser.ParseAsync(src, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+            return await LoadFromValidatedBytesAsync(bytes, url, progress);
         }
-        catch when (hasCache)
+        catch (Exception ex) when (hasCache && ex is not InvalidM3uContentException)
         {
             // Offline/server-failure fallback: use last cached version if available.
-            using var cached = File.OpenRead(cachePath);
-            return await M3uParser.ParseAsync(cached, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+            return await LoadFromValidatedBytesAsync(await File.ReadAllBytesAsync(cachePath), cachePath, progress);
         }
     }
 
     public static async Task<ParseResult> LoadFromFileAsync(string path, IProgress<ParseProgressUpdate>? progress = null)
     {
-        using var stream = File.OpenRead(path);
-        return await M3uParser.ParseAsync(stream, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+        return await LoadFromValidatedBytesAsync(await File.ReadAllBytesAsync(path), path, progress);
     }
 
     // ── Settings ─────────────────────────────────────────────────────────────
@@ -468,6 +458,20 @@ public static class PlaylistService
         {
             return null;
         }
+    }
+
+    private static async Task<ParseResult> LoadFromValidatedBytesAsync(byte[] bytes, string sourceName, IProgress<ParseProgressUpdate>? progress)
+    {
+        InvalidM3uContent.EnsureValid(bytes, sourceName);
+
+        using var src = new MemoryStream(bytes, writable: false);
+        if (bytes.LongLength > 0)
+        {
+            using var tracked = new ProgressReadStream(src, bytes.LongLength);
+            return await M3uParser.ParseAsync(tracked, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
+        }
+
+        return await M3uParser.ParseAsync(src, LoadRemoveDuplicates(), progress); // Task.Run inside; continuation on UI thread
     }
 
     private static void TryWriteCacheFile(string cachePath, byte[] bytes)
