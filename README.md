@@ -145,6 +145,8 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 
 - EPG Helper (map Movistar or similar list's channels to m3u list channel and proxy).
 - When EPG Helper is ready: show EPG + codec and resolution info in the UI.
+- Keep the focus on the player, not the buttons, (only) when the button was selected with mouse (not when used keyboard).
+- Show full url in stream info (key i) it's currently trimmed. Allow to copy URL in the Playlist list.
 
 ---
 
