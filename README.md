@@ -152,8 +152,6 @@ ffmpeg -err_detect ignore_err -i your_recording.ts -c copy -fflags +genpts recor
 
 ### 2026-09-13
 
-**Nota (ES):** Las listas cargadas desde URL ahora se guardan en la carpeta cache para acelerar cargas futuras (si el tamaño remoto no cambia, no se vuelve a descargar). Ademas, los overlays de Playing e Info (tecla I) ya no quedan como always-on-top global: se muestran solo sobre la ventana del reproductor.
-
 - **URL playlist cache folder** - added on-disk cache in `cache/` for URL playlists (`playlist_<hash>.m3u8`), with size-based validation against remote `Content-Length` and offline fallback to cached copy when network download fails
 - **Now-playing overlay z-order fix** - the **Playing:** popup no longer stays system-topmost; it now behaves as a player overlay only
 - **Stream info overlay z-order fix** - the `I` info popup no longer stays system-topmost; it now behaves as a player overlay only
