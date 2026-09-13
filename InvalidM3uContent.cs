@@ -21,6 +21,12 @@ public static class InvalidM3uContent
 {
     public const int MinimumLength = 15;
 
+    private static readonly string[] ValidM3uMarkers =
+    {
+        "#EXTM3U",
+        "#EXTINF",
+    };
+
     private static readonly string[] InvalidMarkers =
     {
         "acceso bloqueado",
@@ -41,6 +47,17 @@ public static class InvalidM3uContent
     public static bool TryGetInvalidReason(string? text, out string reason)
     {
         var trimmed = (text ?? string.Empty).Trim();
+
+        // Avoid false positives: explicit M3U tags take priority.
+        foreach (var marker in ValidM3uMarkers)
+        {
+            if (trimmed.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                reason = string.Empty;
+                return false;
+            }
+        }
+
         if (trimmed.Length < MinimumLength)
         {
             reason = $"Content shorter than {MinimumLength} characters.";

@@ -7,7 +7,7 @@ namespace AzIPTV;
 
 class Program
 {
-    public const string AppVersion = "v1.1.1c";
+    public const string AppVersion = "v1.1.2";
     public const string AppName = "AzIPTV";
     public static string AppDisplayName => $"{AppName} {AppVersion}";
 
